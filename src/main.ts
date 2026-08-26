@@ -270,7 +270,10 @@ export default class TypstianPlugin extends Plugin {
       },
       jump: (request) => getCompiler().jump(request),
       forward: (request) => getCompiler().forward(request),
-      onCompiled: (sourcePath, result) => this.recordDependencies(sourcePath, result),
+      onCompiled: (sourcePath, result) => {
+        this.recordDependencies(sourcePath, result);
+        this.publishDiagnostics(result);
+      },
       onDiagnostic: (diagnostic) => { void this.revealDiagnostic(diagnostic); },
       onSourceLocation: (location, isCurrent) => this.revealSourceLocation(location, isCurrent),
       disposeBackend: () => {
@@ -315,6 +318,34 @@ export default class TypstianPlugin extends Plugin {
     });
     this.compilers.add(compiler);
     return compiler;
+  }
+
+  /**
+   * Mirrors a compile's diagnostics into the editors that compile covers. Its
+   * own dependency list bounds the fan-out: another project's preview reports
+   * on its own files, and clearing every open editor would wipe the marks it
+   * just published.
+   */
+  private publishDiagnostics(result: CompilerCompileResult): void {
+    const vaultRoot = this.vaultRoot();
+    const root = this.compilationRoot(vaultRoot);
+    const toVaultPath = (compilerPath: string): string | null =>
+      resolveDiagnosticVaultPath(vaultRoot, root, compilerPath);
+    const covered = new Set(
+      result.dependencies
+        .map((dependency) => toVaultPath(dependency))
+        .filter((vaultPath): vaultPath is string => vaultPath !== null)
+    );
+    const located = result.diagnostics.map((diagnostic) => {
+      if (diagnostic.path === undefined) return diagnostic;
+      return { ...diagnostic, path: toVaultPath(diagnostic.path) ?? undefined };
+    });
+    for (const leaf of this.app.workspace.getLeavesOfType(TYPST_VIEW_TYPE)) {
+      const view = leaf.view;
+      if (!(view instanceof TypstEditorView)) continue;
+      const path = view.file?.path;
+      if (path !== undefined && covered.has(path)) view.setDiagnostics(located);
+    }
   }
 
   private recordDependencies(sourcePath: string, result: CompilerCompileResult): void {

@@ -166,6 +166,45 @@ describe("TypstianPlugin settings updates", () => {
   });
 });
 
+describe("TypstianPlugin diagnostic fan-out", () => {
+  it("leaves an editor outside the compile's dependencies untouched", async () => {
+    const first = deferredLeaf();
+    const second = deferredLeaf();
+    const { internals, workspace } = harness([first.leaf, second.leaf]);
+    first.finish();
+    second.finish();
+    const openFile = (leaf: DeferredLeaf): ((file: TFile) => Promise<void>) =>
+      leaf.openFile as unknown as (file: TFile) => Promise<void>;
+    await openFile(first.leaf)(fileAt("a.typ"));
+    await openFile(second.leaf)(fileAt("b.typ"));
+    (workspace.getLeavesOfType as unknown as { mockReturnValue(value: unknown): void })
+      .mockReturnValue([first.leaf, second.leaf]);
+    const editorA = first.leaf.view as TypstEditorView;
+    const editorB = second.leaf.view as TypstEditorView;
+    const markedA = vi.spyOn(editorA, "setDiagnostics");
+    const markedB = vi.spyOn(editorB, "setDiagnostics");
+
+    internals.publishDiagnostics({
+      ok: true,
+      dependencies: ["a.typ"],
+      diagnostics: [{ severity: "warning", message: "careful", path: "a.typ", line: 1, column: 1 }],
+    } as never);
+
+    // A second project's preview must not clear the marks this editor is
+    // showing for its own compile.
+    expect(markedA).toHaveBeenCalledTimes(1);
+    expect(markedB).not.toHaveBeenCalled();
+  });
+});
+
+function fileAt(path: string): TFile {
+  return Object.assign(new TFile(), {
+    path,
+    extension: "typ",
+    basename: path.replace(/\.typ$/, ""),
+  });
+}
+
 function harness(leaves: DeferredLeaf[]) {
   const files = new Map<string, TFile>();
   const activeCallbacks: Array<(leaf: unknown) => void> = [];
@@ -229,6 +268,7 @@ function harness(leaves: DeferredLeaf[]) {
       getSourcePath(): string | null;
       refresh(): void;
     }>;
+    publishDiagnostics(result: unknown): void;
     vaultRoot(): string;
     compilationRoot(vaultRoot: string): string;
     revealSourceLocation(

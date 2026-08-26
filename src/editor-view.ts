@@ -4,6 +4,7 @@ import {
   indentOnInput,
   syntaxHighlighting,
 } from "@codemirror/language";
+import { type Diagnostic, setDiagnostics as setLintDiagnostics } from "@codemirror/lint";
 import { search, searchKeymap } from "@codemirror/search";
 import { EditorState, type Extension } from "@codemirror/state";
 import {
@@ -18,6 +19,7 @@ import {
 } from "@codemirror/view";
 import { TextFileView, type WorkspaceLeaf } from "obsidian";
 
+import type { CompilerDiagnostic } from "./compiler-client";
 import { typstLanguage } from "./language";
 
 export const TYPST_VIEW_TYPE = "typst-editor";
@@ -140,19 +142,38 @@ export class TypstEditorView extends TextFileView {
   }
 
   revealDiagnostic(line: number, column: number): void {
-    const document = this.editorView.state.doc;
-    const lineNumber = Math.min(Math.max(Math.trunc(line), 1), document.lines);
-    const targetLine = document.line(lineNumber);
-    const columnOffset = Math.min(
-      Math.max(Math.trunc(column) - 1, 0),
-      targetLine.length,
-    );
+    const position = this.diagnosticPosition(line, column);
+    if (position === null) return;
 
     this.editorView.dispatch({
-      selection: { anchor: targetLine.from + columnOffset },
+      selection: { anchor: position.from },
       scrollIntoView: true,
     });
     this.editorView.focus();
+  }
+
+  /**
+   * Replaces every mark in this editor with the diagnostics of the latest
+   * compile. Diagnostics of other files belong to their own editor, and one
+   * without a position cannot be underlined; both stay in the preview list.
+   */
+  setDiagnostics(diagnostics: readonly CompilerDiagnostic[]): void {
+    const ownPath = this.file?.path;
+    const marks: Diagnostic[] = [];
+    for (const diagnostic of diagnostics) {
+      if (ownPath === undefined || diagnostic.path !== ownPath) continue;
+      if (diagnostic.line === undefined || diagnostic.column === undefined) continue;
+      const position = this.diagnosticPosition(diagnostic.line, diagnostic.column);
+      if (position === null) continue;
+      marks.push({
+        from: position.from,
+        to: position.lineTo,
+        severity: diagnostic.severity,
+        message: diagnostic.message,
+      });
+    }
+
+    this.editorView.dispatch(setLintDiagnostics(this.editorView.state, marks));
   }
 
   revealByteOffset(byteOffset: number): boolean {
@@ -180,6 +201,27 @@ export class TypstEditorView extends TextFileView {
     this.onClosed();
     this.editorView.destroy();
     return Promise.resolve();
+  }
+
+  /**
+   * Maps a compiler's 1-based line and UTF-16 column onto this document. The
+   * buffer may have changed since the compile, so a location past the end of a
+   * line or of the document clamps instead of failing.
+   */
+  private diagnosticPosition(
+    line: number,
+    column: number,
+  ): { from: number; lineTo: number } | null {
+    // Without a line there is nothing to point at, but a garbled column still
+    // has one: mark the whole line rather than dropping the message.
+    if (!Number.isFinite(line)) return null;
+    const document = this.editorView.state.doc;
+    const lineNumber = Math.min(Math.max(Math.trunc(line), 1), document.lines);
+    const targetLine = document.line(lineNumber);
+    const columnOffset = Number.isFinite(column)
+      ? Math.min(Math.max(Math.trunc(column) - 1, 0), targetLine.length)
+      : 0;
+    return { from: targetLine.from + columnOffset, lineTo: targetLine.to };
   }
 
   private createState(doc: string): EditorState {

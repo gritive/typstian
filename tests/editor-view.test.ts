@@ -2,6 +2,7 @@
 
 import type { WorkspaceLeaf } from "obsidian";
 import { undo } from "@codemirror/commands";
+import { forEachDiagnostic } from "@codemirror/lint";
 import { SearchQuery, setSearchQuery } from "@codemirror/search";
 import { describe, expect, it, vi } from "vitest";
 
@@ -25,6 +26,14 @@ function createView(onDirty = vi.fn(), onForwardSearch = vi.fn()) {
   const view = new TypstEditorView(leaf, { onDirty, onForwardSearch });
   document.body.appendChild(view.contentEl);
   return { view, modify, onDirty, onForwardSearch };
+}
+
+function collectDiagnostics(view: TypstEditorView) {
+  const collected: { from: number; to: number; severity: string; message: string }[] = [];
+  forEachDiagnostic(view.editorView.state, (diagnostic, from, to) => {
+    collected.push({ from, to, severity: diagnostic.severity, message: diagnostic.message });
+  });
+  return collected;
 }
 
 function pressKey(view: TypstEditorView, init: KeyboardEventInit) {
@@ -143,6 +152,105 @@ describe("TypstEditorView", () => {
 
     view.revealDiagnostic(0, 0);
     expect(view.editorView.state.selection.main.head).toBe(0);
+  });
+
+  it("marks a compiler diagnostic in the editor with its severity and message", () => {
+    const { view } = createView();
+    view.file = { path: "book/main.typ", extension: "typ" } as never;
+    view.setViewData("one\ntwo", true);
+
+    view.setDiagnostics([
+      { severity: "error", message: "unknown variable", path: "book/main.typ", line: 2, column: 2 },
+    ]);
+
+    expect(collectDiagnostics(view)).toEqual([
+      { from: 5, to: 7, severity: "error", message: "unknown variable" },
+    ]);
+    expect(view.contentEl.querySelector(".cm-lintRange-error")).not.toBeNull();
+  });
+
+  it("keeps the compiler severity when marking a warning", () => {
+    const { view } = createView();
+    view.file = { path: "book/main.typ", extension: "typ" } as never;
+    view.setViewData("one\ntwo", true);
+
+    view.setDiagnostics([
+      { severity: "warning", message: "unused", path: "book/main.typ", line: 1, column: 1 },
+    ]);
+
+    expect(collectDiagnostics(view)).toEqual([
+      { from: 0, to: 3, severity: "warning", message: "unused" },
+    ]);
+  });
+
+  it("ignores a diagnostic reported for another file", () => {
+    const { view } = createView();
+    view.file = { path: "book/main.typ", extension: "typ" } as never;
+    view.setViewData("one\ntwo", true);
+
+    view.setDiagnostics([
+      { severity: "error", message: "elsewhere", path: "book/other.typ", line: 1, column: 1 },
+      { severity: "error", message: "unplaced" },
+    ]);
+
+    expect(collectDiagnostics(view)).toEqual([]);
+  });
+
+  it("clamps a diagnostic pointing past the end of the current buffer", () => {
+    const { view } = createView();
+    view.file = { path: "book/main.typ", extension: "typ" } as never;
+    view.setViewData("one\ntwo", true);
+
+    view.setDiagnostics([
+      { severity: "error", message: "stale", path: "book/main.typ", line: 99, column: 99 },
+    ]);
+
+    expect(collectDiagnostics(view)).toEqual([
+      { from: 7, to: 7, severity: "error", message: "stale" },
+    ]);
+  });
+
+  it("clamps a diagnostic pointing before the start of the buffer", () => {
+    const { view } = createView();
+    view.file = { path: "book/main.typ", extension: "typ" } as never;
+    view.setViewData("one\ntwo", true);
+
+    view.setDiagnostics([
+      { severity: "error", message: "low", path: "book/main.typ", line: 0, column: -5 },
+    ]);
+
+    expect(collectDiagnostics(view)).toEqual([
+      { from: 0, to: 3, severity: "error", message: "low" },
+    ]);
+  });
+
+  it("skips a diagnostic whose coordinates are not finite", () => {
+    const { view } = createView();
+    view.file = { path: "book/main.typ", extension: "typ" } as never;
+    view.setViewData("one\ntwo", true);
+
+    // A missing or garbled location must not take the whole mark pass down.
+    view.setDiagnostics([
+      { severity: "error", message: "nowhere", path: "book/main.typ", line: Number.NaN, column: 1 },
+      { severity: "error", message: "endless", path: "book/main.typ", line: 1, column: Infinity },
+      { severity: "warning", message: "fine", path: "book/main.typ", line: 2, column: 1 },
+    ]);
+
+    expect(collectDiagnostics(view).map((one) => one.message)).toEqual(["endless", "fine"]);
+  });
+
+  it("replaces the previous marks when a new diagnostic list arrives", () => {
+    const { view } = createView();
+    view.file = { path: "book/main.typ", extension: "typ" } as never;
+    view.setViewData("one\ntwo", true);
+    view.setDiagnostics([
+      { severity: "error", message: "first", path: "book/main.typ", line: 1, column: 1 },
+    ]);
+
+    view.setDiagnostics([]);
+
+    expect(collectDiagnostics(view)).toEqual([]);
+    expect(view.contentEl.querySelector(".cm-lintRange-error")).toBeNull();
   });
 
   it("reveals a source location from a UTF-8 byte offset", () => {

@@ -8,6 +8,7 @@ export default defineConfig({
     },
     dedupe: [
       "@codemirror/language",
+      "@codemirror/lint",
       "@codemirror/search",
       "@codemirror/state",
       "@codemirror/view",
