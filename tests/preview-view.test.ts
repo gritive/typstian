@@ -249,7 +249,7 @@ describe("TypstPreviewView", () => {
       byteOffset: 8
     });
     expect(forwardRequest?.signal).toBeInstanceOf(AbortSignal);
-    expect(page.querySelector<HTMLElement>(".typst-pdf-forward-marker")?.style.left).toBe("120px");
+    expect(page.querySelector<HTMLElement>(".typst-pdf-forward-marker")?.style.getPropertyValue("--typst-pdf-marker-x")).toBe("120px");
     expect(view.getSourcePath()).toBe("book/main.typ");
     await view.close();
   });

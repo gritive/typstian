@@ -134,23 +134,6 @@ function rasterDimensions(
   };
 }
 
-function setTextLayerStyles(layer: HTMLElement): void {
-  layer.style.position = "absolute";
-  layer.style.inset = "0";
-  layer.style.overflow = "hidden";
-  layer.style.lineHeight = "1";
-  layer.style.transformOrigin = "0 0";
-  layer.style.userSelect = "text";
-
-  for (const child of Array.from(layer.querySelectorAll<HTMLElement>("span, br"))) {
-    child.style.position = "absolute";
-    child.style.color = "transparent";
-    child.style.whiteSpace = "pre";
-    child.style.cursor = "text";
-    child.style.transformOrigin = "0 0";
-  }
-}
-
 export class PdfPreviewRenderer {
   private readonly engine: PdfEngine;
   private readonly onPoint: ((point: PdfPreviewPoint) => void) | undefined;
@@ -187,8 +170,6 @@ private pageObserver: IntersectionObserver | null = null;
     this.zoom = clampZoom(options.zoom ?? 1);
     this.fit = options.fit ?? false;
     this.root.classList.add("typst-pdf-preview-scroll");
-    this.root.style.overflow = "auto";
-    this.root.style.scrollbarGutter = "stable";
     this.observedWidth = this.root.offsetWidth
       || this.root.getBoundingClientRect().width
       || this.root.clientWidth;
@@ -297,16 +278,6 @@ private pageObserver: IntersectionObserver | null = null;
     const marker = window.document.createElement("span");
     marker.className = "typst-pdf-forward-marker";
     marker.setAttribute("aria-hidden", "true");
-    marker.style.position = "absolute";
-    marker.style.width = "12px";
-    marker.style.height = "12px";
-    marker.style.margin = "-6px";
-    marker.style.border = "2px solid var(--interactive-accent, #7c3aed)";
-    marker.style.borderRadius = "50%";
-    marker.style.background =
-      "color-mix(in srgb, var(--interactive-accent, #7c3aed) 28%, transparent)";
-    marker.style.pointerEvents = "none";
-    marker.style.zIndex = "2";
     this.positionForwardMarker(page, marker, point);
     page.append(marker);
     page.classList.add("typst-pdf-forward-target");
@@ -615,11 +586,8 @@ private pageObserver: IntersectionObserver | null = null;
     pageElement.dataset.baseHeight = String(baseHeight);
     pageElement.dataset.renderedWidth = String(renderedWidth);
     pageElement.dataset.renderedHeight = String(renderedHeight);
-    pageElement.style.position = "relative";
-    pageElement.style.boxSizing = "content-box";
-    pageElement.style.width = `${renderedWidth}px`;
-    pageElement.style.height = `${renderedHeight}px`;
-    pageElement.style.flex = "0 0 auto";
+    pageElement.style.setProperty("--typst-pdf-page-width", `${renderedWidth}px`);
+    pageElement.style.setProperty("--typst-pdf-page-height", `${renderedHeight}px`);
   }
 
   private async renderPage(
@@ -736,9 +704,8 @@ private pageObserver: IntersectionObserver | null = null;
     const raster = rasterDimensions(viewport, this.pixelRatio);
     canvas.width = raster.width;
     canvas.height = raster.height;
-    canvas.style.display = "block";
-    canvas.style.width = `${viewport.width}px`;
-    canvas.style.height = `${viewport.height}px`;
+    canvas.style.setProperty("--typst-pdf-canvas-width", `${viewport.width}px`);
+    canvas.style.setProperty("--typst-pdf-canvas-height", `${viewport.height}px`);
     canvas.setAttribute("aria-hidden", "true");
     pageElement.append(canvas);
 
@@ -746,7 +713,6 @@ private pageObserver: IntersectionObserver | null = null;
     textLayer.className = "typst-pdf-text-layer textLayer";
     textLayer.setAttribute("aria-label", `Selectable text for PDF page ${pageNumber}`);
     textLayer.style.setProperty("--scale-factor", String(scale));
-    setTextLayerStyles(textLayer);
     pageElement.append(textLayer);
     pageElement.append(sourceButton);
     if (
@@ -787,7 +753,6 @@ private pageObserver: IntersectionObserver | null = null;
       this.textLayerTasks.delete(textLayerTask);
     }
     if (this.isCurrent(generation)) {
-      setTextLayerStyles(textLayer);
       pageElement.dataset.rendered = "true";
     }
   }
@@ -895,8 +860,8 @@ private pageObserver: IntersectionObserver | null = null;
     const baseHeight = Number(page.dataset.baseHeight);
     const renderedWidth = Number(page.dataset.renderedWidth);
     const renderedHeight = Number(page.dataset.renderedHeight);
-    marker.style.left = `${point.xPt * renderedWidth / baseWidth}px`;
-    marker.style.top = `${point.yPt * renderedHeight / baseHeight}px`;
+    marker.style.setProperty("--typst-pdf-marker-x", `${point.xPt * renderedWidth / baseWidth}px`);
+    marker.style.setProperty("--typst-pdf-marker-y", `${point.yPt * renderedHeight / baseHeight}px`);
   }
 
   private clearForwardMarker(): void {

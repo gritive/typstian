@@ -178,8 +178,7 @@ describe("PdfPreviewRenderer", () => {
     expect(root.querySelectorAll(".typst-pdf-page canvas")).toHaveLength(2);
     expect(root.querySelectorAll(".typst-pdf-text-layer")).toHaveLength(2);
     expect(root.querySelectorAll(".typst-pdf-text-layer span")).toHaveLength(2);
-    expect(root.querySelector<HTMLElement>(".typst-pdf-text-layer")?.style.userSelect).toBe("text");
-    expect(root.style.overflow).toBe("auto");
+    expect(root.classList.contains("typst-pdf-preview-scroll")).toBe(true);
   });
 
   it("reuses the loaded PDF document for zoom and fit controls", async () => {
@@ -197,7 +196,7 @@ describe("PdfPreviewRenderer", () => {
     await renderer.fitToWidth();
 
     expect(load).toHaveBeenCalledOnce();
-    expect(root.querySelector<HTMLElement>(".typst-pdf-page")?.style.width).toBe("300px");
+    expect(root.querySelector<HTMLElement>(".typst-pdf-page")?.style.getPropertyValue("--typst-pdf-page-width")).toBe("300px");
   });
 
   it("shows the priority page before a delayed large document finishes", async () => {
@@ -473,8 +472,8 @@ describe("PdfPreviewRenderer", () => {
       const marker = page.querySelector<HTMLElement>(".typst-pdf-forward-marker");
       expect(scrollIntoView).toHaveBeenCalledWith({ block: "center", inline: "center" });
       expect(scrollIntoView.mock.instances[0]).toBe(marker);
-      expect(marker?.style.left).toBe("120px");
-      expect(marker?.style.top).toBe("160px");
+      expect(marker?.style.getPropertyValue("--typst-pdf-marker-x")).toBe("120px");
+      expect(marker?.style.getPropertyValue("--typst-pdf-marker-y")).toBe("160px");
 
       await vi.runAllTimersAsync();
       expect(page.querySelector(".typst-pdf-forward-marker")).toBeNull();
@@ -497,7 +496,8 @@ describe("PdfPreviewRenderer", () => {
     await renderer.render(new Uint8Array([1]));
 
     const page = root.querySelector<HTMLElement>(".typst-pdf-page");
-    expect(page?.style.boxSizing).toBe("content-box");
+    expect(page?.style.getPropertyValue("--typst-pdf-page-width")).toBe("1200px");
+    expect(page?.style.getPropertyValue("--typst-pdf-page-height")).toBe("1600px");
   });
 
   it("configures PDF.js text-layer scale from the rendered viewport", async () => {
@@ -734,15 +734,15 @@ describe("PdfPreviewRenderer", () => {
 
     await renderer.setZoom(9);
     expect(renderer.serialize()).toEqual({ zoom: 4, fit: false });
-    expect(root.querySelector<HTMLElement>(".typst-pdf-page")?.style.width).toBe("2400px");
+    expect(root.querySelector<HTMLElement>(".typst-pdf-page")?.style.getPropertyValue("--typst-pdf-page-width")).toBe("2400px");
 
     await renderer.fitToWidth();
     expect(renderer.serialize()).toEqual({ zoom: 4, fit: true });
-    expect(root.querySelector<HTMLElement>(".typst-pdf-page")?.style.width).toBe("300px");
+    expect(root.querySelector<HTMLElement>(".typst-pdf-page")?.style.getPropertyValue("--typst-pdf-page-width")).toBe("300px");
 
     rootWidth = 60;
     await renderer.fitToWidth();
-    expect(root.querySelector<HTMLElement>(".typst-pdf-page")?.style.width).toBe("60px");
+    expect(root.querySelector<HTMLElement>(".typst-pdf-page")?.style.getPropertyValue("--typst-pdf-page-width")).toBe("60px");
   });
 
 
@@ -765,7 +765,7 @@ describe("PdfPreviewRenderer", () => {
 
     await renderer.render(new Uint8Array([1]));
 
-    expect(root.querySelector<HTMLElement>(".typst-pdf-page")?.style.width).toBe("266px");
+    expect(root.querySelector<HTMLElement>(".typst-pdf-page")?.style.getPropertyValue("--typst-pdf-page-width")).toBe("266px");
     await renderer.dispose();
     root.remove();
     style.remove();
@@ -788,8 +788,8 @@ describe("PdfPreviewRenderer", () => {
 
     const canvas = root.querySelector<HTMLCanvasElement>("canvas");
     expect(canvas).not.toBeNull();
-    expect(canvas?.style.width).toBe("2400px");
-    expect(canvas?.style.height).toBe("3200px");
+    expect(canvas?.style.getPropertyValue("--typst-pdf-canvas-width")).toBe("2400px");
+    expect(canvas?.style.getPropertyValue("--typst-pdf-canvas-height")).toBe("3200px");
     expect((canvas?.width ?? 0) * (canvas?.height ?? 0)).toBeLessThanOrEqual(16_777_216);
     expect(canvas?.width).toBeLessThanOrEqual(8_192);
     expect(canvas?.height).toBeLessThanOrEqual(8_192);
@@ -836,7 +836,7 @@ describe("PdfPreviewRenderer", () => {
     const renderer = new PdfPreviewRenderer(root, { engine, fit: true });
     await renderer.render(new Uint8Array([1]));
 
-    expect(root.style.scrollbarGutter).toBe("stable");
+    expect(root.classList.contains("typst-pdf-preview-scroll")).toBe(true);
     expect(root.clientWidth).toBe(600);
     for (const nextScrollbarState of [true, false, true, false]) {
       hasVerticalScrollbar = nextScrollbarState;
@@ -851,7 +851,7 @@ describe("PdfPreviewRenderer", () => {
     notifyResize?.(outerWidth);
     await vi.waitFor(() => expect(pageRender).toHaveBeenCalledTimes(2));
     expect(
-      root.querySelector<HTMLElement>(".typst-pdf-page")?.style.width,
+      root.querySelector<HTMLElement>(".typst-pdf-page")?.style.getPropertyValue("--typst-pdf-page-width"),
     ).toBe("300px");
     await renderer.dispose();
   });
@@ -906,7 +906,7 @@ describe("PdfPreviewRenderer", () => {
       expect(resizedRender).toHaveBeenCalledOnce();
     });
     expect(
-      root.querySelector<HTMLElement>(".typst-pdf-page")?.style.width
+      root.querySelector<HTMLElement>(".typst-pdf-page")?.style.getPropertyValue("--typst-pdf-page-width")
     ).toBe("300px");
     expect(root.scrollTop).toBe(100);
     await renderer.dispose();
