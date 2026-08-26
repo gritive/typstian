@@ -29,6 +29,16 @@ export default tseslint.config(
   })),
   {
     files: ["**/*.ts"],
+    ignores: ["scripts/**", "tests/**", "helper/**"],
+    plugins: { obsidianmd },
+    rules: {
+      // Typst is a product name, so it keeps its capital inside UI sentences.
+      // `ignoreWords` leaves the plugin's own brand list intact.
+      "obsidianmd/ui/sentence-case": ["error", { ignoreWords: ["Typst", "Typstian"] }]
+    }
+  },
+  {
+    files: ["**/*.ts"],
     languageOptions: {
       globals: { ...globals.browser, ...globals.node },
       parserOptions: {

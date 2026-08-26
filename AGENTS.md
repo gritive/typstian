@@ -10,7 +10,7 @@ carries only what a user needs; building, testing, and releasing live in
 ```sh
 npm test                  # vitest run
 npm run typecheck         # tsc --noEmit
-npm run lint              # eslint .
+npm run lint              # eslint . --max-warnings 0 (warnings fail)
 npm run build             # -> main.js with Brotli-embedded WASM
 npm run dev               # esbuild watch
 
