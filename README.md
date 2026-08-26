@@ -88,10 +88,18 @@ is dropped and the newest text compiles as soon as the running compile finishes.
 - **Compilation root**: optional path inside the vault; defaults to the vault
   root.
 
-Typstian 0.0.1 uses its embedded fonts and fonts installed in standard macOS,
-Windows, or Linux font directories. It registers shared font metadata once, then
-loads only fonts selected by a document into WASM on demand. It does not accept
-additional font paths or compiler flags.
+Typstian embeds one font — New Computer Modern Math, Typst's default math face.
+Every text face comes from your system's standard macOS, Windows, or Linux font
+directories. The math face has to be embedded because operating systems do not
+ship one, and Typst fails an entire compile with `no font could be found` when
+an equation cannot be typeset; text has a usable fallback everywhere. Typstian
+registers shared font metadata once, then loads only the fonts a document
+selects into WASM on demand. It does not accept additional font paths or
+compiler flags.
+
+If a document looks wrong, install the family it asks for — a `.typ` file that
+does not set `#set text(font: ...)` falls back to whatever your system offers
+rather than to Typst's bundled Libertinus Serif.
 
 ## Troubleshooting
 
@@ -131,6 +139,13 @@ The preview loads PDF.js with `isEvalSupported: false`, so its PostScript
 function compiler — the one path that would call `new Function` on document
 content — stays off. The remaining `new Function("")` occurrences in the bundle
 are PDF.js feature detection for that same setting.
+
+`main.js` is around 11 MB, because the Typst compiler ships inside it as a
+Brotli-compressed WebAssembly module rather than being downloaded at runtime.
+That is above the 5 MB file limit of Obsidian Sync's Standard plan, so Sync
+Standard will not carry the plugin file; installing through the Community
+directory is unaffected. Shrinking further would mean dropping the compiler or
+the math face, and either removes the feature the plugin exists for.
 
 Typstian makes no network requests, sends no telemetry, performs no remote
 compilation, and does not launch or download native executables.

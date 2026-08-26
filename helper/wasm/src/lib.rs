@@ -14,7 +14,7 @@ use typst::text::{Font, FontBook, FontInfo};
 use typst::utils::LazyHash;
 use typst::{LibraryExt, World, WorldExt};
 use typst_ide::{IdeWorld, Jump, jump_from_click, jump_from_cursor};
-use typst_kit::fonts::{self, FontSource, FontStore};
+use typst_kit::fonts::{FontSource, FontStore};
 use typst_layout::PagedDocument;
 use typst_pdf::PdfOptions;
 use typstian_core::{
@@ -22,6 +22,11 @@ use typstian_core::{
     RenderedPosition,
 };
 use wasm_bindgen::prelude::*;
+
+/// New Computer Modern Math, Typst's default math face, vendored from
+/// typst-assets 0.15.1 under the GUST Font License. Bundling only this face
+/// keeps `main.js` far smaller than embedding the full typst-assets font set.
+const EMBEDDED_MATH_FONT: &[u8] = include_bytes!("../assets/NewCMMath-Book.otf");
 
 const PROTOCOL_VERSION: u32 = 1;
 const TYPST_VERSION: &str = "0.15.1";
@@ -121,8 +126,16 @@ impl InMemoryWorld {
         let entry = normalize_path(entry)?;
         let vpath = VirtualPath::new(entry).map_err(|error| error.to_string())?;
         let main = FileId::new(RootedPath::new(VirtualRoot::Project, vpath));
+        // Only the math face is embedded. Text faces come from the host's system
+        // fonts, which keeps the compiled module small enough to stay inside
+        // Obsidian Sync's file limit; a math face has no such fallback, because
+        // operating systems do not ship one and Typst fails the whole compile
+        // with "no font could be found" when an equation cannot be typeset.
         let mut fonts = FontStore::new();
-        fonts.extend(fonts::embedded());
+        fonts.extend(Font::iter(Bytes::new(EMBEDDED_MATH_FONT)).map(|font| {
+            let info = font.info().clone();
+            (font, info)
+        }));
         for font in registered_fonts {
             fonts.push((
                 HostFontSource {

@@ -96,8 +96,13 @@ and embeds the result in `main.js`; Community releases contain only `main.js`,
   15-second deadline. Timeout or abort terminates the worker and its retained
   document; the next request starts a clean session. PDF bytes cross the WASM boundary directly as an `ArrayBuffer`; the worker
   transfers it without a renderer-side copy.
-- Typstian uses embedded fonts plus fonts in bounded standard OS
-  directories. It does not accept additional font paths.
+- **Only the math face is embedded.** `helper/wasm/assets/NewCMMath-Book.otf` is
+  vendored from typst-assets under the GUST Font License and registered in
+  `InMemoryWorld::new`; `typst-kit` runs with `default-features = false`, so
+  `fonts::embedded()` is gone. Dropping it too fails every equation with
+  `no font could be found` — Typst treats that as a compile error, not a
+  fallback. Text faces come from bounded standard OS directories. No additional
+  font paths.
 - **Renderer code must not touch main-window globals.** A preview can live in a
   popout window, so timers, `getComputedStyle`, `getSelection`, and
   `activeElement` go through the element's own `win`/`doc`, and elements are

@@ -54,6 +54,7 @@ describe("release contract", () => {
     expect(fs.existsSync(path.join(root, "styles.css"))).toBe(true);
     expect(fs.existsSync(path.join(root, "helper/wasm/pkg/typstian_wasm.js"))).toBe(true);
     expect(fs.existsSync(path.join(root, "helper/wasm/pkg/typstian_wasm_bg.wasm"))).toBe(true);
+    expect(fs.existsSync(path.join(root, "helper/wasm/assets/NewCMMath-Book.otf"))).toBe(true);
   });
 
 

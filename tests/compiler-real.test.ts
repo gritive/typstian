@@ -70,6 +70,22 @@ it("loads embedded Brotli WASM without a release-side asset", { timeout: 15_000 
     }
   });
 
+it("compiles an equation with the embedded math face", async () => {
+    const client = new TypstianCompilerClient({
+      rootPath: fixtureRoot,
+      wasmPath: path.resolve("helper/wasm/pkg/typstian_wasm_bg.wasm"),
+    });
+    try {
+      const result = await client.compile({ revision: 1, entryPath: "equation.typ" });
+
+      // Operating systems do not ship a math face, so without the embedded one
+      // Typst fails the whole compile with "no font could be found".
+      expect(result.ok).toBe(true);
+    } finally {
+      client.close();
+    }
+  });
+
 it("embeds a Korean glyph", async () => {
     const client = new TypstianCompilerClient({
       rootPath: fixtureRoot,
