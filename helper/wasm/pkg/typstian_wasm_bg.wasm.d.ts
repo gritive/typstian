@@ -1,5 +1,4 @@
 /* tslint:disable */
-/* eslint-disable */
 export const memory: WebAssembly.Memory;
 export const __wbg_typstianwasmsession_free: (a: number, b: number) => void;
 export const typstianwasmsession_compile: (a: number, b: number, c: number, d: any, e: any) => [number, number, number];

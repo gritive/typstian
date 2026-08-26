@@ -6,7 +6,7 @@
   "description": "Edit Typst files and preview compiled documents in Obsidian.",
   "main": "main.js",
   "scripts": {
-    "build:wasm": "wasm-pack build helper/wasm --target web --out-dir pkg --locked",
+    "build:wasm": "wasm-pack build helper/wasm --target web --out-dir pkg --locked && node scripts/normalize-wasm-glue.mjs",
     "licenses:generate": "node scripts/generate-third-party-notices.mjs",
     "licenses:check": "node scripts/generate-third-party-notices.mjs --check",
     "verify:release-notices": "node scripts/verify-release-notices.mjs",

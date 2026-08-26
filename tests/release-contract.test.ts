@@ -30,7 +30,12 @@ describe("release contract", () => {
       version: manifest.version
     });
     expect(scripts["build:wasm"]).toContain("wasm-pack");
+    expect(scripts["build:wasm"]).toContain("node scripts/normalize-wasm-glue.mjs");
     expect(scripts.release).toBe("node scripts/release.mjs");
+    for (const generated of ["typstian_wasm.d.ts", "typstian_wasm_bg.wasm.d.ts", "typstian_wasm.js"]) {
+      expect(fs.readFileSync(path.join(root, "helper/wasm/pkg", generated), "utf8"))
+        .not.toContain("/* eslint-disable */");
+    }
     expect(scripts.build).not.toContain("build:wasm");
     expect(scripts.test).not.toContain("build:wasm");
     expect(gitignore.split(/\r?\n/)).not.toContain("typstian_wasm_bg.wasm");
