@@ -13,6 +13,7 @@
     "dev": "node esbuild.config.mjs",
     "build": "npm run typecheck && node esbuild.config.mjs production && npm run verify:release-notices",
     "lint": "eslint .",
+    "release": "node scripts/release.mjs",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },

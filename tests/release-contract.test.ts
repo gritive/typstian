@@ -21,15 +21,16 @@ describe("release contract", () => {
     expect(manifest).toMatchObject({
       id: "typstian",
       name: "Typstian",
-      version: "0.0.1",
       minAppVersion: "1.13.1",
       isDesktopOnly: true
     });
+    expect(manifest.version).toMatch(/^\d+\.\d+\.\d+$/);
     expect(packageJson).toMatchObject({
       name: "typstian",
       version: manifest.version
     });
     expect(scripts["build:wasm"]).toContain("wasm-pack");
+    expect(scripts.release).toBe("node scripts/release.mjs");
     expect(scripts.build).not.toContain("build:wasm");
     expect(scripts.test).not.toContain("build:wasm");
     expect(gitignore.split(/\r?\n/)).not.toContain("typstian_wasm_bg.wasm");
@@ -103,8 +104,10 @@ describe("release contract", () => {
       "Copy `main.js`, `typstian_wasm_bg.wasm`",
     );
     expect(readme).not.toContain("hard timeout");
-    expect(readme).toContain("draft");
-    expect(readme).toContain("Publish");
+    expect(readme).toContain("npm run release");
+    expect(readme).not.toContain("draft");
+    expect(workflow).not.toContain("--draft");
+    expect(workflow).toContain("--generate-notes");
     expect(readme).toContain("Make the GitHub repository public");
     expect(readme).toContain("Rust 1.92 or newer");
     expect(readme).toContain("Release CI uses Rust 1.98.0");

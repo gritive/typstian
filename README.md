@@ -33,15 +33,24 @@ enable another plugin that registers the `.typ` extension in the same vault.
 
 ## Publish a Community release
 
-Make the GitHub repository public, then push a tag that exactly matches
-`manifest.json`'s version (for example, `0.0.1`). The release workflow rebuilds
-the WASM compiler from the locked Rust sources, runs the test, lint, and build
-gates, attests `main.js`, `manifest.json`, and `styles.css`, and creates a draft
-GitHub release containing those three files.
+Make the GitHub repository public, then run the release script from a clean
+checkout that matches its remote branch:
 
-Open that draft in GitHub Releases, add the release notes, and select
-**Publish release**. Obsidian cannot install a draft: submit the plugin to the
-Community directory only after the matching release is published.
+```sh
+npm run release -- patch     # or minor, major, or an explicit 1.2.3
+npm run release -- patch --dry-run
+```
+
+It bumps `manifest.json`, `package.json`, `package-lock.json`, and
+`versions.json` together, regenerates the dependency notices, runs the
+typecheck, lint, and test gates, then commits, tags, and pushes. Pushing the tag
+starts the release workflow, which rebuilds the WASM compiler from the locked
+Rust sources, reruns those gates, attests `main.js`, `manifest.json`, and
+`styles.css`, and publishes a GitHub release containing those three files with
+generated notes.
+
+Submit the plugin to the Community directory only after the matching release is
+published.
 
 ## Use
 
