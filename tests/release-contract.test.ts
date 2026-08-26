@@ -36,6 +36,17 @@ describe("release contract", () => {
       expect(fs.readFileSync(path.join(root, "helper/wasm/pkg", generated), "utf8"))
         .not.toContain("/* eslint-disable */");
     }
+    // wasm-bindgen types the compile callbacks as `Function` and its result as
+    // `any`, which every linter reading the generated glue reports.
+    const glueTypes = fs.readFileSync(
+      path.join(root, "helper/wasm/pkg/typstian_wasm.d.ts"),
+      "utf8"
+    );
+    expect(glueTypes).toContain(
+      "compile(request_json: string, read_file: WasmInputReader, read_font: WasmInputReader): unknown;"
+    );
+    expect(glueTypes).not.toMatch(/\bFunction\b/);
+    expect(glueTypes).not.toMatch(/:\s*any\b/);
     expect(scripts.build).not.toContain("build:wasm");
     expect(scripts.test).not.toContain("build:wasm");
     expect(gitignore.split(/\r?\n/)).not.toContain("typstian_wasm_bg.wasm");

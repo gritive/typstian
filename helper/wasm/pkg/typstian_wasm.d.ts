@@ -1,9 +1,12 @@
+/** Resolves one vault-relative input path, or nothing when it is absent. */
+export type WasmInputReader = (path: string) => Uint8Array | undefined;
+
 /* tslint:disable */
 
 export class TypstianWasmSession {
     free(): void;
     [Symbol.dispose](): void;
-    compile(request_json: string, read_file: Function, read_font: Function): any;
+    compile(request_json: string, read_file: WasmInputReader, read_font: WasmInputReader): unknown;
     environment(): string;
     forward(request_json: string): string;
     jump(request_json: string): string;
