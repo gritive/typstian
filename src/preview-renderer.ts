@@ -137,7 +137,7 @@ export class PreviewRenderer {
 
   private renderMessage(message: string, role: "status" | "alert"): void {
     this.root.querySelector(".typst-preview-message")?.remove();
-    const element = document.createElement("p");
+    const element = createEl("p");
     element.className = "typst-preview-message";
     element.setAttribute("role", role);
     element.textContent = message;
@@ -145,11 +145,11 @@ export class PreviewRenderer {
   }
 
   private renderError(message: string, diagnostics: readonly CompilerDiagnostic[]): void {
-    const container = document.createElement("div");
+    const container = createDiv();
     container.className = "typst-preview-error";
     container.setAttribute("role", "alert");
 
-    const summary = document.createElement("p");
+    const summary = createEl("p");
     summary.textContent = message;
     container.append(summary);
 
@@ -157,7 +157,7 @@ export class PreviewRenderer {
       const located = diagnostic.path !== undefined
         && diagnostic.line !== undefined
         && diagnostic.column !== undefined;
-      const element = document.createElement(located ? "button" : "p");
+      const element = createEl(located ? "button" : "p");
       element.className = "typst-preview-diagnostic";
       if (element instanceof HTMLButtonElement) {
         element.type = "button";

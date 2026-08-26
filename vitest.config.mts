@@ -17,6 +17,7 @@ export default defineConfig({
   },
   test: {
     environment: "node",
-    restoreMocks: true
+    restoreMocks: true,
+    setupFiles: ["./tests/stubs/obsidian-dom.ts"]
   }
 });

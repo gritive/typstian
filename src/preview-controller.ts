@@ -19,7 +19,7 @@ export interface PreviewControllerOptions<Result> {
 
 export class PreviewController<Result = unknown> {
   private sourcePath: string | null = null;
-  private timer: ReturnType<typeof setTimeout> | null = null;
+  private timer: number | null = null;
   private active: AbortController | null = null;
   private queued = false;
   private generation = 0;
@@ -60,8 +60,8 @@ export class PreviewController<Result = unknown> {
     if (this.disposed || this.sourcePath === null) return;
     this.generation += 1;
     this.queued = false;
-    if (this.timer !== null) clearTimeout(this.timer);
-    this.timer = setTimeout(() => {
+    if (this.timer !== null) window.clearTimeout(this.timer);
+    this.timer = window.setTimeout(() => {
       this.timer = null;
       if (this.active !== null) {
         this.queued = true;
@@ -75,7 +75,7 @@ export class PreviewController<Result = unknown> {
     this.generation += 1;
     this.queued = false;
     if (this.timer !== null) {
-      clearTimeout(this.timer);
+      window.clearTimeout(this.timer);
       this.timer = null;
     }
     this.active?.abort();

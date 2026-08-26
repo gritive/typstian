@@ -1,5 +1,6 @@
 import eslint from "@eslint/js";
 import globals from "globals";
+import obsidianmd from "eslint-plugin-obsidianmd";
 import tseslint from "typescript-eslint";
 
 export default tseslint.config(
@@ -21,6 +22,10 @@ export default tseslint.config(
   ...tseslint.configs.recommendedTypeChecked.map((config) => ({
     ...config,
     files: ["**/*.ts"]
+  })),
+  ...obsidianmd.configs.recommended.map((config) => ({
+    ...config,
+    ignores: [...(config.ignores ?? []), "scripts/**", "tests/**", "helper/**", "*.mjs", "*.mts"]
   })),
   {
     files: ["**/*.ts"],

@@ -95,8 +95,8 @@ function fitScale(
   pageElement: HTMLElement,
   baseWidth: number,
 ): number {
-  const rootStyle = globalThis.getComputedStyle(root);
-  const pageStyle = globalThis.getComputedStyle(pageElement);
+  const rootStyle = window.getComputedStyle(root);
+  const pageStyle = window.getComputedStyle(pageElement);
   const horizontalPadding = (Number.parseFloat(rootStyle.paddingLeft) || 0)
     + (Number.parseFloat(rootStyle.paddingRight) || 0);
   const configuredBorder = Number.parseFloat(
@@ -171,10 +171,10 @@ export class PdfPreviewRenderer {
   private disposed = false;
 
   private forwardMarker: HTMLElement | null = null;
-  private forwardMarkerTimer: ReturnType<typeof setTimeout> | null = null;
+  private forwardMarkerTimer: number | null = null;
 private readonly resizeObserver: ResizeObserver | null;
   private observedWidth: number;
-  private resizeTimer: ReturnType<typeof setTimeout> | null = null;
+  private resizeTimer: number | null = null;
 private pageObserver: IntersectionObserver | null = null;
 
   constructor(
@@ -183,7 +183,7 @@ private pageObserver: IntersectionObserver | null = null;
   ) {
     this.engine = options.engine;
     this.onPoint = options.onPoint;
-    this.pixelRatio = Math.max(1, options.pixelRatio ?? globalThis.devicePixelRatio ?? 1);
+    this.pixelRatio = Math.max(1, options.pixelRatio ?? window.devicePixelRatio ?? 1);
     this.zoom = clampZoom(options.zoom ?? 1);
     this.fit = options.fit ?? false;
     this.root.classList.add("typst-pdf-preview-scroll");
@@ -204,8 +204,8 @@ private pageObserver: IntersectionObserver | null = null;
         if (width === this.observedWidth) return;
         this.observedWidth = width;
         if (!this.fit || this.disposed) return;
-        if (this.resizeTimer !== null) clearTimeout(this.resizeTimer);
-        this.resizeTimer = setTimeout(() => {
+        if (this.resizeTimer !== null) window.clearTimeout(this.resizeTimer);
+        this.resizeTimer = window.setTimeout(() => {
           this.resizeTimer = null;
           if (!this.fit || this.disposed) return;
           void this.rerender().catch(() => undefined);
@@ -294,7 +294,7 @@ private pageObserver: IntersectionObserver | null = null;
     }
 
     this.clearForwardMarker();
-    const marker = globalThis.document.createElement("span");
+    const marker = window.document.createElement("span");
     marker.className = "typst-pdf-forward-marker";
     marker.setAttribute("aria-hidden", "true");
     marker.style.position = "absolute";
@@ -316,7 +316,7 @@ private pageObserver: IntersectionObserver | null = null;
       void this.visibleRenderRequest?.(point.page).catch(() => undefined);
     }
     marker.scrollIntoView?.({ block: "center", inline: "center" });
-    this.forwardMarkerTimer = setTimeout(() => {
+    this.forwardMarkerTimer = window.setTimeout(() => {
       if (this.forwardMarker !== marker) return;
       page.classList.remove("typst-pdf-forward-target");
       marker.remove();
@@ -337,7 +337,7 @@ private pageObserver: IntersectionObserver | null = null;
     this.disposed = true;
     this.resizeObserver?.disconnect();
     if (this.resizeTimer !== null) {
-      clearTimeout(this.resizeTimer);
+      window.clearTimeout(this.resizeTimer);
       this.resizeTimer = null;
     }
     await this.reset();
@@ -391,7 +391,7 @@ private pageObserver: IntersectionObserver | null = null;
     const fallbackWidth = priorityBaseViewport?.width ?? 1;
     const fallbackHeight = priorityBaseViewport?.height ?? 1;
 
-    const container = globalThis.document.createElement("div");
+    const container = window.document.createElement("div");
     container.className = "typst-pdf-pages";
 
     const pageElements = new Map<number, HTMLElement>();
@@ -399,7 +399,7 @@ private pageObserver: IntersectionObserver | null = null;
       const geometry = previousGeometry.get(pageNumber);
       const baseWidth = geometry?.width ?? fallbackWidth;
       const baseHeight = geometry?.height ?? fallbackHeight;
-      const pageElement = globalThis.document.createElement("div");
+      const pageElement = window.document.createElement("div");
       pageElement.className = "typst-pdf-page";
       const scale = this.fit && baseWidth > 0
         ? fitScale(this.root, pageElement, baseWidth)
@@ -435,7 +435,7 @@ private pageObserver: IntersectionObserver | null = null;
       const pageElement = pageElements.get(pageNumber);
       if (
         pageElement === undefined
-        || pageElement.contains(globalThis.document.activeElement)
+        || pageElement.contains(window.document.activeElement)
         || (
           this.forwardMarker !== null
           && this.forwardMarker.parentElement === pageElement
@@ -516,11 +516,11 @@ private pageObserver: IntersectionObserver | null = null;
           if (pageElement !== undefined) {
             pageElement.replaceChildren();
             pageElement.dataset.rendered = "error";
-            const message = globalThis.document.createElement("div");
+            const message = window.document.createElement("div");
             message.className = "typst-pdf-page-error";
             message.setAttribute("role", "alert");
             message.append("Could not render PDF page.");
-            const retry = globalThis.document.createElement("button");
+            const retry = window.document.createElement("button");
             retry.type = "button";
             retry.className = "typst-pdf-page-retry";
             retry.setAttribute("aria-label", `Retry PDF page ${pageNumber}`);
@@ -684,12 +684,12 @@ private pageObserver: IntersectionObserver | null = null;
         ? target.closest("a[href], button, input, select, textarea, [role=button]")
         : null;
       if (interactiveTarget !== null && interactiveTarget !== pageElement) return;
-      const selection = globalThis.getSelection?.();
+      const selection = window.getSelection?.();
       if (selection !== undefined && selection !== null && !selection.isCollapsed) return;
       const rotation = ((baseViewport.rotation ?? 0) % 360 + 360) % 360;
       if (rotation !== 0) return;
       const rect = pageElement.getBoundingClientRect();
-      const style = globalThis.getComputedStyle(pageElement);
+      const style = window.getComputedStyle(pageElement);
       const borderLeft = Number.parseFloat(style.borderLeftWidth) || 0;
       const borderRight = Number.parseFloat(style.borderRightWidth) || 0;
       const borderTop = Number.parseFloat(style.borderTopWidth) || 0;
@@ -709,7 +709,7 @@ private pageObserver: IntersectionObserver | null = null;
       const viewportY = localY * viewport.height / contentHeight;
       emitPoint(viewportX, viewportY);
     };
-    const sourceButton = globalThis.document.createElement("button");
+    const sourceButton = window.document.createElement("button");
     sourceButton.type = "button";
     sourceButton.className = "typst-pdf-source-jump";
     sourceButton.setAttribute("aria-label", `Jump to source from PDF page ${pageNumber}`);
@@ -728,7 +728,7 @@ private pageObserver: IntersectionObserver | null = null;
     };
     removeListeners.add(removeListener);
 
-    const canvas = globalThis.document.createElement("canvas");
+    const canvas = window.document.createElement("canvas");
     const context = canvas.getContext("2d");
     if (context === null) {
       throw new Error("A 2D canvas context is required for PDF preview.");
@@ -742,7 +742,7 @@ private pageObserver: IntersectionObserver | null = null;
     canvas.setAttribute("aria-hidden", "true");
     pageElement.append(canvas);
 
-    const textLayer = globalThis.document.createElement("div");
+    const textLayer = window.document.createElement("div");
     textLayer.className = "typst-pdf-text-layer textLayer";
     textLayer.setAttribute("aria-label", `Selectable text for PDF page ${pageNumber}`);
     textLayer.style.setProperty("--scale-factor", String(scale));
@@ -836,7 +836,7 @@ private pageObserver: IntersectionObserver | null = null;
     }
 
     const borderTop = Number.parseFloat(
-      globalThis.getComputedStyle(closest.element).borderTopWidth,
+      window.getComputedStyle(closest.element).borderTopWidth,
     ) || 0;
     const yPt = Math.max(
       0,
@@ -868,7 +868,7 @@ private pageObserver: IntersectionObserver | null = null;
         ) {
           const rect = page.getBoundingClientRect();
           const borderTop = Number.parseFloat(
-            globalThis.getComputedStyle(page).borderTopWidth,
+            window.getComputedStyle(page).borderTopWidth,
           ) || 0;
           const viewportY = this.root.getBoundingClientRect().top + anchor.viewportOffset;
           const anchoredY = rect.top + borderTop + anchor.yPt * renderedHeight / baseHeight;
@@ -901,7 +901,7 @@ private pageObserver: IntersectionObserver | null = null;
 
   private clearForwardMarker(): void {
     if (this.forwardMarkerTimer !== null) {
-      clearTimeout(this.forwardMarkerTimer);
+      window.clearTimeout(this.forwardMarkerTimer);
       this.forwardMarkerTimer = null;
     }
     const marker = this.forwardMarker;

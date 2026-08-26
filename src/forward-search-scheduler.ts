@@ -2,7 +2,7 @@ const FORWARD_SEARCH_DEBOUNCE_MS = 75;
 
 export class ForwardSearchScheduler<T> {
   private generation = 0;
-  private timer: ReturnType<typeof setTimeout> | null = null;
+  private timer: number | null = null;
   private owner: object | null = null;
   private disposed = false;
 
@@ -17,8 +17,8 @@ export class ForwardSearchScheduler<T> {
     if (this.disposed) return;
     const generation = ++this.generation;
     this.owner = owner;
-    if (this.timer !== null) clearTimeout(this.timer);
-    this.timer = setTimeout(() => {
+    if (this.timer !== null) window.clearTimeout(this.timer);
+    this.timer = window.setTimeout(() => {
       this.timer = null;
       const isCurrent = (): boolean =>
         !this.disposed
@@ -33,7 +33,7 @@ export class ForwardSearchScheduler<T> {
     this.generation += 1;
     this.owner = null;
     if (this.timer !== null) {
-      clearTimeout(this.timer);
+      window.clearTimeout(this.timer);
       this.timer = null;
     }
   }
@@ -44,7 +44,7 @@ export class ForwardSearchScheduler<T> {
     this.generation += 1;
     this.owner = null;
     if (this.timer !== null) {
-      clearTimeout(this.timer);
+      window.clearTimeout(this.timer);
       this.timer = null;
     }
   }

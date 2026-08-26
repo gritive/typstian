@@ -178,7 +178,7 @@ export class TypstPreviewView extends ItemView {
     this.closed = false;
     this.contentEl.replaceChildren();
     this.contentEl.classList.add("typstian-preview");
-    const toolbar = document.createElement("div");
+    const toolbar = createDiv();
     toolbar.className = "typst-preview-toolbar";
     this.contentEl.append(toolbar);
 
@@ -188,7 +188,7 @@ export class TypstPreviewView extends ItemView {
       this.createToolbarButton("Fit", "Fit pages to the preview width", () => this.renderer?.fitToWidth())
     );
 
-    const pages = document.createElement("div");
+    const pages = createDiv();
     pages.className = "typst-preview-pages";
     this.contentEl.append(pages);
     this.mountRenderer(pages);
@@ -316,7 +316,7 @@ export class TypstPreviewView extends ItemView {
     title: string,
     action: () => void | Promise<void> | undefined
   ): HTMLButtonElement {
-    const button = document.createElement("button");
+    const button = createEl("button");
     button.type = "button";
     button.textContent = label;
     button.title = title;

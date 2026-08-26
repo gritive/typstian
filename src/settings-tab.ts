@@ -29,8 +29,8 @@ export class TypstianSettingsTab extends PluginSettingTab {
   }
 
   private scheduleSave(change: Partial<TypstianSettings>): void {
-    if (this.saveTimer !== null) globalThis.window.clearTimeout(this.saveTimer);
-    const timer = globalThis.window.setTimeout(() => {
+    if (this.saveTimer !== null) window.clearTimeout(this.saveTimer);
+    const timer = window.setTimeout(() => {
       this.saveTimer = null;
       void this.save(change);
     }, 300);

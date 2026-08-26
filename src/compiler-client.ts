@@ -154,7 +154,7 @@ interface PendingRequest<T = unknown> {
   settled: boolean;
   resolve: (value: T) => void;
   reject: (error: CompilerClientError) => void;
-  timeout?: ReturnType<typeof setTimeout>;
+  timeout?: number;
   signal?: AbortSignal;
   abort?: () => void;
 }
@@ -647,7 +647,7 @@ export class TypstianCompilerClient {
         if (pending.settled) {
           throw new CompilerClientError("aborted", "Typst engine request was cancelled.");
         }
-        pending.timeout = setTimeout(() => {
+        pending.timeout = window.setTimeout(() => {
           if (generation !== this.generation || pending.settled) return;
           this.failSession(new CompilerClientError("timeout", "Typst engine request timed out."));
         }, this.timeoutMs);
@@ -750,7 +750,7 @@ export class TypstianCompilerClient {
 
   private waitForEngine(engine: WasmEngine): Promise<void> {
     return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
+      const timeout = window.setTimeout(() => {
         reject(new CompilerClientError(
           "timeout",
           "Typst WASM engine initialization timed out.",
@@ -758,11 +758,11 @@ export class TypstianCompilerClient {
       }, this.initializationTimeoutMs);
       void engine.ready().then(
         () => {
-          clearTimeout(timeout);
+          window.clearTimeout(timeout);
           resolve();
         },
         (error: unknown) => {
-          clearTimeout(timeout);
+          window.clearTimeout(timeout);
           reject(error instanceof Error ? error : new Error(String(error)));
         },
       );
@@ -797,7 +797,7 @@ export class TypstianCompilerClient {
   private finishPending<T>(pending: PendingRequest<T>, settle: () => void): void {
     if (pending.settled) return;
     pending.settled = true;
-    if (pending.timeout !== undefined) clearTimeout(pending.timeout);
+    if (pending.timeout !== undefined) window.clearTimeout(pending.timeout);
     if (pending.signal !== undefined && pending.abort !== undefined) {
       pending.signal.removeEventListener("abort", pending.abort);
     }
