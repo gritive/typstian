@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { TFile, View } from "obsidian";
+import { TFile, View, type WorkspaceLeaf } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
 import type { DependencyIndex } from "../src/dependency-index";
@@ -416,5 +416,101 @@ describe("TypstianPlugin source navigation", () => {
 
     expect(sourceLeaf.leaf.detach).not.toHaveBeenCalled();
     expect(sourceLeaf.reveals[0]).not.toHaveBeenCalled();
+  });
+});
+
+describe("TypstianPlugin completion routing", () => {
+  interface CompletionInternals {
+    handleCompletion(
+      editor: TypstEditorView,
+      request: {
+        sourcePath: string;
+        sourceText: string;
+        byteOffset: number;
+        explicit: boolean;
+      },
+      isCurrent: () => boolean,
+    ): Promise<{ byteOffset: number; completions: unknown[] } | null>;
+  }
+
+  function completionHarness() {
+    const { internals, plugin } = harness([]);
+    const unrelated = {
+      getSourcePath: vi.fn(() => "other/doc.typ"),
+      complete: vi.fn(),
+    };
+    const owning = {
+      getSourcePath: vi.fn(() => "book/main.typ"),
+      complete: vi.fn(() =>
+        Promise.resolve({
+          revision: 4,
+          byteOffset: 5,
+          completions: [{ kind: "func", label: "image" }],
+        }),
+      ),
+    };
+    vi.spyOn(internals, "previewViews").mockReturnValue(
+      [unrelated, owning] as never,
+    );
+    const leaf = { app: { vault: { modify: vi.fn() } } } as unknown as WorkspaceLeaf;
+    const editor = new TypstEditorView(leaf);
+    editor.file = Object.assign(new TFile(), {
+      path: "book/main.typ",
+      extension: "typ",
+      basename: "main",
+    });
+    editor.setViewData("#im", true);
+    return {
+      editor,
+      internals: plugin as unknown as CompletionInternals,
+      owning,
+      plugin,
+      unrelated,
+    };
+  }
+
+  it("asks only the preview that compiles the edited file", async () => {
+    const { editor, internals, owning, plugin, unrelated } = completionHarness();
+    await plugin.onload();
+
+    const result = await internals.handleCompletion(
+      editor,
+      { sourcePath: "book/main.typ", sourceText: "#im", byteOffset: 3, explicit: true },
+      () => true,
+    );
+
+    expect(unrelated.complete).not.toHaveBeenCalled();
+    // The compilation root is the vault root here, so the compiler path is the
+    // vault path; the editor never sees the revision the preview holds.
+    expect(owning.complete).toHaveBeenCalledWith(
+      "book/main.typ",
+      "#im",
+      3,
+      true,
+      expect.any(Function),
+    );
+    expect(result).toEqual({ byteOffset: 5, completions: [{ kind: "func", label: "image" }] });
+    plugin.onunload();
+  });
+
+  it("offers nothing once the request no longer matches the editor", async () => {
+    const { editor, internals, owning, plugin } = completionHarness();
+    await plugin.onload();
+
+    const stale = await internals.handleCompletion(
+      editor,
+      { sourcePath: "book/main.typ", sourceText: "#im", byteOffset: 3, explicit: true },
+      () => false,
+    );
+    const foreign = await internals.handleCompletion(
+      editor,
+      { sourcePath: "book/other.typ", sourceText: "#im", byteOffset: 3, explicit: true },
+      () => true,
+    );
+
+    expect(stale).toBeNull();
+    expect(foreign).toBeNull();
+    expect(owning.complete).not.toHaveBeenCalled();
+    plugin.onunload();
   });
 });

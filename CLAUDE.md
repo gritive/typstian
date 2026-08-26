@@ -46,9 +46,9 @@ and embeds the result in `main.js`; Community releases contain only `main.js`,
 - `helper/wasm/` provides the only Rust compiler implementation, using
   `wasm-bindgen` and exact Typst 0.15.1 crates for compile/jump/forward.
 - Each WASM session retains the compiled document per revision so a
-  PDF click maps back to a source span (inverse search) and an editor cursor maps
-  forward to a page position, both against the exact snapshot that produced the
-  visible PDF.
+  PDF click maps back to a source span (inverse search), an editor cursor maps
+  forward to a page position, and a cursor maps to `typst-ide` completions, all
+  against the exact snapshot that produced the visible PDF.
 
 ## Gotchas
 
@@ -139,8 +139,36 @@ and embeds the result in `main.js`; Community releases contain only `main.js`,
   `activeElement` go through the element's own `win`/`doc`, and elements are
   created through their parent's `createEl`/`createDiv`/`createSpan`.
   `eslint-plugin-obsidianmd` enforces the weaker form of this.
+- **Autocomplete answers from the last compile, never a new one.**
+  `Session::complete` runs `typst_ide::autocomplete` against the retained world
+  and document. The cursor, though, belongs to the buffer the user is typing in,
+  which is usually a few keystrokes ahead, so the request carries that buffer and
+  `CursorMapping::resolve` reconciles the two: identical text completes at the
+  cursor; a single splice that *ends at the cursor* completes at the mapped
+  snapshot offset and maps the reply back; anything else answers
+  `no-completions`. Never map an offset between the two texts by assumption —
+  a cursor on the wrong syntax node describes a different document. The live
+  buffer rides on the request, so it carries its own 2 MiB bound
+  (`MAX_COMPLETION_SOURCE_BYTES`, mirrored by `maxCompletionBytes` in
+  `src/compiler-client.ts`) instead of the 64 KiB request cap that guards the
+  compile path. `CompletionScheduler` keeps one request in flight and only the
+  newest one queued, and a reply whose buffer changed underneath is dropped. A
+  file with no preview, or no retained document, offers nothing — completion
+  must never provoke a compile. Typst's `apply` strings are snippet syntax
+  (`${name}`), which is also CodeMirror's, so they go through
+  `snippetCompletion` unchanged.
+- **A malformed completion reply does not fail the session.** Every other
+  request kind hands a malformed or oversized reply to `failSession`, which
+  disposes the engine and terminates the worker — right for compile, jump, and
+  forward, because the preview is showing a document they could not validate.
+  A completion is an optional read, so `enqueue` refuses just that request.
+- `@codemirror/autocomplete` is pinned exactly, like `@codemirror/lint`: every
+  6.x release so far depends on `@codemirror/view ^6.17.0`, which Obsidian's
+  6.38.6 satisfies, so npm keeps one CodeMirror instance. Check that range
+  before bumping — a demand for a newer `view` would nest a second
+  `@codemirror/state` and silently break the extension.
 - Compiler test fixtures are under `helper/tests/fixtures/`
-  (`project/`, `diagnostics/`, `escape/`, `fonts/`), not `tests/fixtures/`.
+  (`project/`, `completion/`, `diagnostics/`, `escape/`, `fonts/`), not `tests/fixtures/`.
 
 ## Decisions
 

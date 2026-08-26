@@ -1,6 +1,7 @@
 use base64::Engine;
 use typstian_wasm::protocol::{
-    ClickRequest, ClickResponse, ForwardRequest, ForwardResponse, PageDimensions, RenderedPosition,
+    ClickRequest, ClickResponse, CompleteRequest, CompleteResponse, CompletionItem, ForwardRequest,
+    ForwardResponse, PageDimensions, RenderedPosition,
 };
 use typstian_wasm::{Clock, CompileRequest, FileInput, Session};
 
@@ -317,6 +318,233 @@ fn click_uses_retained_snapshot_after_source_input_changes() {
         before,
         ClickResponse::Source { path, .. } if path == "section.typ"
     ));
+}
+
+/// The completion fixture compiled once, plus its source text so a test can
+/// name a cursor by what precedes it rather than by a hand-counted offset.
+fn completion_session(revision: u64) -> (Session, String) {
+    let bytes = std::fs::read("../tests/fixtures/completion/main.typ").unwrap();
+    let text = String::from_utf8(bytes.clone()).unwrap();
+    let mut session = Session::new();
+    let compiled = session
+        .compile(CompileRequest {
+            clock: CLOCK,
+            entry: "main.typ".into(),
+            revision,
+            files: vec![file_input("main.typ", &bytes)],
+            packages: Vec::new(),
+        })
+        .expect("fixture compiles");
+    assert_eq!(error_messages(&compiled), Vec::<&str>::new());
+    (session, text)
+}
+
+/// Completes against a buffer the compiler has never seen. `source_text` is
+/// what the editor holds now; the session only ever saw the fixture.
+fn complete_in(
+    session: &Session,
+    revision: u64,
+    source_text: &str,
+    byte_offset: usize,
+) -> CompleteResponse {
+    session.complete(CompleteRequest {
+        revision,
+        source: "main.typ".into(),
+        source_text: source_text.into(),
+        byte_offset,
+        explicit: true,
+    })
+}
+
+fn complete_at(session: &Session, revision: u64, byte_offset: usize) -> CompleteResponse {
+    let text = std::fs::read_to_string("../tests/fixtures/completion/main.typ").unwrap();
+    complete_in(session, revision, &text, byte_offset)
+}
+
+fn completions(response: &CompleteResponse) -> &[CompletionItem] {
+    match response {
+        CompleteResponse::Completions { completions, .. } => completions,
+        other => panic!("expected completions, got {other:?}"),
+    }
+}
+
+#[test]
+fn completes_library_functions_after_a_markup_hash() {
+    let (session, text) = completion_session(5);
+    // Just after the `#` of `#lorem(3)`: markup switches to code mode there, so
+    // the whole global scope is offered.
+    let cursor = text.find("#lorem").unwrap() + 1;
+
+    let response = complete_at(&session, 5, cursor);
+
+    let items = completions(&response);
+    let image = items
+        .iter()
+        .find(|item| item.label == "image")
+        .expect("global functions should be offered after a markup hash");
+    assert_eq!(image.kind, "func");
+    assert!(matches!(
+        response,
+        CompleteResponse::Completions { revision: 5, byte_offset, .. } if byte_offset == cursor
+    ));
+}
+
+#[test]
+fn completes_labels_from_the_retained_document() {
+    let (session, text) = completion_session(6);
+    // Just after the `@` of `See @intro.`. Label completions come from the
+    // compiled document, not the syntax tree, so this fails if the retained
+    // document is not handed to the compiler's IDE layer.
+    let cursor = text.find("@intro").unwrap() + 1;
+
+    let response = complete_at(&session, 6, cursor);
+
+    let items = completions(&response);
+    let label = items
+        .iter()
+        .find(|item| item.label == "intro")
+        .expect("labels of the retained document should be offered after `@`");
+    assert_eq!(label.kind, "label");
+}
+
+#[test]
+fn rejects_a_stale_complete_revision_without_recompiling() {
+    let (session, text) = completion_session(7);
+    let cursor = text.find("#lorem").unwrap() + 1;
+
+    assert_eq!(
+        complete_at(&session, 6, cursor),
+        CompleteResponse::StaleRevision { expected: 7 }
+    );
+}
+
+#[test]
+fn rejects_a_cursor_that_is_not_a_source_boundary() {
+    let (session, text) = completion_session(8);
+
+    assert_eq!(
+        complete_at(&session, 8, text.len() + 1),
+        CompleteResponse::InvalidRequest { revision: 8 }
+    );
+    assert!(matches!(
+        session.complete(CompleteRequest {
+            revision: 8,
+            source: "../outside.typ".into(),
+            source_text: text.clone(),
+            byte_offset: 0,
+            explicit: true,
+        }),
+        CompleteResponse::InvalidRequest { revision: 8 }
+    ));
+    // A cursor that splits a Korean syllable of the live buffer is not a
+    // position at all.
+    assert_eq!(
+        complete_in(&session, 8, &text, text.find("한글").unwrap() + 1),
+        CompleteResponse::InvalidRequest { revision: 8 }
+    );
+}
+
+#[test]
+fn maps_a_cursor_typed_since_the_compile_onto_the_retained_snapshot() {
+    let (session, text) = completion_session(10);
+    // The user typed `im` just after the `#` of `#lorem` and no compile has run
+    // since. The snapshot has no such text, so the raw live cursor would land
+    // two bytes into `lorem` and describe the wrong syntax node. The heading
+    // above holds Korean, so every offset here is past multi-byte text.
+    let hash = text.find("#lorem").unwrap();
+    let mut live = text.clone();
+    live.insert_str(hash + 1, "im");
+
+    let response = complete_in(&session, 10, &live, hash + 3);
+
+    let items = completions(&response);
+    assert!(items.iter().any(|item| item.label == "image"));
+    // The reply comes back in the live buffer's own coordinates: the word to
+    // replace starts right after the hash, not two bytes earlier.
+    assert!(matches!(
+        response,
+        CompleteResponse::Completions { revision: 10, byte_offset, .. }
+            if byte_offset == hash + 1
+    ));
+}
+
+#[test]
+fn reports_no_completions_when_the_buffer_changed_away_from_the_cursor() {
+    let (session, text) = completion_session(11);
+    let hash = text.find("#lorem").unwrap();
+
+    // An edit in the heading, far from the cursor: the cursor no longer names
+    // the same point in both texts, so there is nothing honest to offer.
+    let mut elsewhere = text.clone();
+    elsewhere.insert_str(0, "// note\n");
+    assert_eq!(
+        complete_in(&session, 11, &elsewhere, hash + 8 + 1),
+        CompleteResponse::NoCompletions { revision: 11 }
+    );
+
+    // Two separate splices, neither of which the cursor can bridge.
+    let mut scattered = text.clone();
+    scattered.insert_str(hash + 1, "im");
+    scattered.insert(0, 'x');
+    assert_eq!(
+        complete_in(&session, 11, &scattered, hash + 4),
+        CompleteResponse::NoCompletions { revision: 11 }
+    );
+}
+
+#[test]
+fn maps_a_multibyte_insertion_back_through_the_live_buffer() {
+    let (session, text) = completion_session(12);
+    // The typed text is itself multi-byte, so a byte/character mix-up in the
+    // splice arithmetic moves the reply.
+    let at = text.find("@intro").unwrap();
+    let mut live = text.clone();
+    live.insert(at + 1, '한');
+
+    let response = complete_in(&session, 12, &live, at + 1 + "한".len());
+
+    let items = completions(&response);
+    assert!(items.iter().any(|item| item.label == "intro"));
+    assert!(matches!(
+        response,
+        CompleteResponse::Completions { revision: 12, byte_offset, .. }
+            if byte_offset == at + 1
+    ));
+}
+
+#[test]
+fn refuses_a_live_buffer_larger_than_the_completion_limit() {
+    let (session, text) = completion_session(13);
+    let oversized = "x".repeat(2 * 1024 * 1024 + 1);
+
+    assert_eq!(
+        complete_in(&session, 13, &oversized, 0),
+        CompleteResponse::InvalidRequest { revision: 13 }
+    );
+    // The bound is on the request, not on what the session retained.
+    assert!(matches!(
+        complete_at(&session, 13, text.find("#lorem").unwrap() + 1),
+        CompleteResponse::Completions { .. }
+    ));
+}
+
+#[test]
+fn reports_no_completions_inside_plain_markup_text() {
+    let (session, text) = completion_session(9);
+    // Inside the word `Intro` of the heading: implicit completion in running
+    // text must stay silent rather than dumping the global scope.
+    let cursor = text.find("Intro").unwrap() + 2;
+
+    assert_eq!(
+        session.complete(CompleteRequest {
+            revision: 9,
+            source: "main.typ".into(),
+            source_text: text.clone(),
+            byte_offset: cursor,
+            explicit: false,
+        }),
+        CompleteResponse::NoCompletions { revision: 9 }
+    );
 }
 
 #[test]

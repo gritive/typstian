@@ -19,12 +19,15 @@ import {
 } from "./compile-status";
 import { DependencyIndex } from "./dependency-index";
 import { collectDirtyBuffers } from "./dirty-buffer-overlay";
+import { CompletionScheduler } from "./completion-scheduler";
 import { ForwardSearchScheduler } from "./forward-search-scheduler";
 import { SourceNavigationScheduler } from "./source-navigation-scheduler";
 import { chooseSourceEditorLeaf } from "./editor-leaf-policy";
 import {
   TYPST_VIEW_TYPE,
   TypstEditorView,
+  type TypstCompletionRequest,
+  type TypstCompletionResponse,
   type TypstForwardSearchRequest
 } from "./editor-view";
 import {
@@ -66,6 +69,10 @@ export default class TypstianPlugin extends Plugin {
   }>(({ editor, request }, isCurrent) =>
     this.handleForwardSearch(editor, request, isCurrent)
   );
+  private readonly completionScheduler = new CompletionScheduler<
+    { editor: TypstEditorView; request: TypstCompletionRequest },
+    TypstCompletionResponse
+  >(({ editor, request }, isCurrent) => this.handleCompletion(editor, request, isCurrent));
   private readonly sourceNavigationScheduler =
     new SourceNavigationScheduler<TypstSourceLocation>(
       (location, isCurrent) => this.performRevealSourceLocation(location, isCurrent)
@@ -170,6 +177,7 @@ export default class TypstianPlugin extends Plugin {
     this.unloaded = true;
     this.lifecycleGeneration += 1;
     this.forwardSearchScheduler.dispose();
+    this.completionScheduler.dispose();
     this.sourceNavigationScheduler.dispose();
     for (const compiler of this.compilers) compiler.close();
     this.compilers.clear();
@@ -210,6 +218,13 @@ export default class TypstianPlugin extends Plugin {
       onForwardSearch: (request) => {
         this.forwardSearchScheduler.schedule(view, { editor: view, request });
       },
+      // The buffer the request was built from is the staleness check: an answer
+      // that arrives after another keystroke would point at a moved cursor.
+      onComplete: (request): Promise<TypstCompletionResponse | null> =>
+        this.completionScheduler.schedule(
+        { editor: view, request },
+        () => !this.unloaded && view.getViewData() === request.sourceText
+      ),
       onClose: () => {
         this.forwardSearchScheduler.cancel(view);
       }
@@ -270,6 +285,7 @@ export default class TypstianPlugin extends Plugin {
       },
       jump: (request) => getCompiler().jump(request),
       forward: (request) => getCompiler().forward(request),
+      complete: (request) => getCompiler().complete(request),
       onCompiled: (sourcePath, result) => {
         this.recordDependencies(sourcePath, result);
         this.publishDiagnostics(result);
@@ -464,18 +480,7 @@ private handleVaultPath(vaultPath: string, includeDirectEntry = true): void {
       return;
     }
 
-    const previews = this.previewViews();
-    const affectedEntries = new Set(
-      this.dependencies.affectedBy(path.resolve(this.vaultRoot(), request.sourcePath))
-    );
-    const preview = chooseForwardPreview(
-      previews.map((candidate) => ({
-        preview: candidate,
-        sourcePath: candidate.getSourcePath()
-      })),
-      request.sourcePath,
-      affectedEntries
-    );
+    const preview = this.previewForSource(request.sourcePath);
     if (!isCurrent()) return;
     if (preview === undefined) {
       new Notice("Open a preview containing this Typst source before using forward search.");
@@ -494,6 +499,60 @@ private handleVaultPath(vaultPath: string, includeDirectEntry = true): void {
       return;
     }
     await preview.forward(compilerSource, request.byteOffset, isCurrent);
+  }
+
+  /**
+   * The open preview whose compile covers a source file, which is the only one
+   * holding a document that can answer for it.
+   */
+  private previewForSource(sourcePath: string): TypstPreviewView | undefined {
+    const affectedEntries = new Set(
+      this.dependencies.affectedBy(path.resolve(this.vaultRoot(), sourcePath))
+    );
+    return chooseForwardPreview(
+      this.previewViews().map((candidate) => ({
+        preview: candidate,
+        sourcePath: candidate.getSourcePath()
+      })),
+      sourcePath,
+      affectedEntries
+    );
+  }
+
+  /**
+   * Answers the editor with the completions the retained document holds. Every
+   * exit here is silent: an editor without a preview, or outside the
+   * compilation root, simply has nothing to offer — it must never provoke a
+   * compile or a notice.
+   */
+  private async handleCompletion(
+    editor: TypstEditorView,
+    request: TypstCompletionRequest,
+    isCurrent: () => boolean
+  ): Promise<TypstCompletionResponse | null> {
+    if (!isCurrent() || editor.file?.path !== request.sourcePath) return null;
+
+    const preview = this.previewForSource(request.sourcePath);
+    if (preview === undefined || !isCurrent()) return null;
+
+    const vaultRoot = this.vaultRoot();
+    const compilerSource = resolveCompilerEntryPath(
+      vaultRoot,
+      this.compilationRoot(vaultRoot),
+      request.sourcePath
+    );
+    if (compilerSource === null || !isCurrent()) return null;
+
+    const result = await preview.complete(
+      compilerSource,
+      request.sourceText,
+      request.byteOffset,
+      request.explicit,
+      isCurrent
+    );
+    return result === null
+      ? null
+      : { byteOffset: result.byteOffset, completions: result.completions };
   }
 
   private handleDirtyPath(sourcePath: string): void {

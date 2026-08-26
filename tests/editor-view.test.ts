@@ -1,6 +1,11 @@
 // @vitest-environment happy-dom
 
 import type { WorkspaceLeaf } from "obsidian";
+import {
+  acceptCompletion,
+  currentCompletions,
+  startCompletion,
+} from "@codemirror/autocomplete";
 import { undo } from "@codemirror/commands";
 import { forEachDiagnostic } from "@codemirror/lint";
 import { SearchQuery, setSearchQuery } from "@codemirror/search";
@@ -455,5 +460,91 @@ describe("TypstEditorView", () => {
     expect(forward).not.toHaveBeenCalled();
     scheduler.dispose();
     vi.useRealTimers();
+  });
+
+  it("offers compiler completions at the cursor and replaces the typed prefix", async () => {
+    const onComplete = vi.fn(() =>
+      Promise.resolve({
+        byteOffset: 7,
+        completions: [
+          { kind: "func", label: "image", apply: "image(\"${path}\")", detail: "An image." },
+          { kind: "label", label: "intro" },
+        ],
+      }),
+    );
+    const leaf = { app: { vault: { modify: vi.fn() } } } as unknown as WorkspaceLeaf;
+    const view = new TypstEditorView(leaf, { onComplete });
+    document.body.appendChild(view.contentEl);
+    view.file = { path: "book/main.typ", extension: "typ" } as never;
+    // "café" is two bytes wider than it is UTF-16 units, so a byte offset used
+    // as a document position would land in the wrong place.
+    view.setViewData("café #im", true);
+    view.editorView.dispatch({ selection: { anchor: 8 } });
+
+    startCompletion(view.editorView);
+    await vi.waitFor(() => expect(currentCompletions(view.editorView.state)).toHaveLength(1));
+
+    expect(onComplete).toHaveBeenCalledWith({
+      sourcePath: "book/main.typ",
+      sourceText: "café #im",
+      byteOffset: 9,
+      explicit: true,
+    });
+    // Byte offset 7 is the `i` of `#im`, so the query is `im` and only `image`
+    // survives CodeMirror's own filtering.
+    expect(currentCompletions(view.editorView.state)[0]).toMatchObject({
+      label: "image",
+      type: "function",
+      detail: "An image.",
+    });
+
+    // CodeMirror ignores a pick within its own interaction delay, so retry
+    // until the freshly opened list will actually accept one.
+    await vi.waitFor(() => expect(acceptCompletion(view.editorView)).toBe(true));
+
+    // The typed prefix is replaced, not doubled, and Typst's snippet syntax
+    // reaches CodeMirror as a placeholder.
+    expect(view.getViewData()).toBe("café #image(\"path\")");
+    await view.onClose();
+  });
+
+  it("offers nothing when the buffer changed while the compiler answered", async () => {
+    let answer!: (value: { byteOffset: number; completions: [] }) => void;
+    const onComplete = vi.fn(() =>
+      new Promise<{ byteOffset: number; completions: [] }>((resolve) => {
+        answer = resolve;
+      }),
+    );
+    const leaf = { app: { vault: { modify: vi.fn() } } } as unknown as WorkspaceLeaf;
+    const view = new TypstEditorView(leaf, { onComplete });
+    document.body.appendChild(view.contentEl);
+    view.file = { path: "book/main.typ", extension: "typ" } as never;
+    view.setViewData("#im", true);
+    view.editorView.dispatch({ selection: { anchor: 3 } });
+
+    startCompletion(view.editorView);
+    await vi.waitFor(() => expect(onComplete).toHaveBeenCalledOnce());
+    view.editorView.dispatch({ changes: { from: 3, insert: "age" } });
+    answer({ byteOffset: 1, completions: [] });
+    await Promise.resolve();
+
+    expect(currentCompletions(view.editorView.state)).toEqual([]);
+    await view.onClose();
+  });
+
+  it("stays silent for files the compiler does not own", async () => {
+    const onComplete = vi.fn();
+    const leaf = { app: { vault: { modify: vi.fn() } } } as unknown as WorkspaceLeaf;
+    const view = new TypstEditorView(leaf, { onComplete });
+    document.body.appendChild(view.contentEl);
+    view.file = { path: "book/notes.md", extension: "md" } as never;
+    view.setViewData("#im", true);
+    view.editorView.dispatch({ selection: { anchor: 3 } });
+
+    startCompletion(view.editorView);
+    await Promise.resolve();
+
+    expect(onComplete).not.toHaveBeenCalled();
+    await view.onClose();
   });
 });

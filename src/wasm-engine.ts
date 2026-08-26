@@ -143,6 +143,16 @@ class InlineWasmEngine implements WasmEngine {
     return (await this.requireSession()).forward(JSON.stringify(request));
   }
 
+  async complete(request: {
+    revision: number;
+    source: string;
+    sourceText: string;
+    byteOffset: number;
+    explicit: boolean;
+  }): Promise<string> {
+    return (await this.requireSession()).complete(JSON.stringify(request));
+  }
+
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
@@ -256,6 +266,17 @@ class WorkerWasmEngine implements WasmEngine {
   }): Promise<string> {
     await this.initialization;
     return this.request<string>("forward", request);
+  }
+
+  async complete(request: {
+    revision: number;
+    source: string;
+    sourceText: string;
+    byteOffset: number;
+    explicit: boolean;
+  }): Promise<string> {
+    await this.initialization;
+    return this.request<string>("complete", request);
   }
 
   dispose(): void {

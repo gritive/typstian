@@ -8,7 +8,8 @@ type WorkerMethod =
   | "environment"
   | "compile"
   | "jump"
-  | "forward";
+  | "forward"
+  | "complete";
 
 interface WorkerRequest {
   type: "request";
@@ -162,6 +163,9 @@ async function dispatch(
   }
   if (method === "forward") {
     return { value: boundedOutput(activeSession.forward(JSON.stringify(payload))) };
+  }
+  if (method === "complete") {
+    return { value: boundedOutput(activeSession.complete(JSON.stringify(payload))) };
   }
   return compile(activeSession, payload as { revision: number; entryPath: string });
 }

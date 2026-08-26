@@ -17,7 +17,7 @@ export const MAX_LOCAL_PACKAGE_ROOTS = 128;
 // `_`, `-` — before the compiler asks for a file, so re-deriving that grammar
 // here would only misreport an installed package as missing. What is left for
 // this to check is that a component cannot become a path.
-const UNSAFE_SPEC_PART = /[/\\\u0000]/;
+const UNSAFE_SPEC_PART = ["/", "\\", "\u0000"];
 const VERSION = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 
 // Reads files of packages the user already downloaded. Typstian never fetches
@@ -41,7 +41,7 @@ function parsePackageKey(key: string): PackageKey | undefined {
   const specParts = [namespace, name, version];
   if (
     specParts.some((part) => part === undefined || part === "" || part === "." || part === ".."
-      || UNSAFE_SPEC_PART.test(part))
+      || UNSAFE_SPEC_PART.some((unsafe) => part.includes(unsafe)))
     || !VERSION.test(version ?? "")
   ) {
     return undefined;

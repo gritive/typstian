@@ -4,6 +4,8 @@ import {
   CompilerClientError,
   type CompilerCompileResult,
   type CompilerDiagnostic,
+  type CompilerCompleteRequest,
+  type CompilerCompleteResult,
   type CompilerForwardRequest,
   type CompilerForwardResult,
   type CompilerJumpRequest,
@@ -29,6 +31,7 @@ export interface TypstPreviewViewOptions {
   ) => Promise<CompilerCompileResult>;
   jump: (request: CompilerJumpRequest) => Promise<CompilerJumpResult>;
   forward: (request: CompilerForwardRequest) => Promise<CompilerForwardResult>;
+  complete: (request: CompilerCompleteRequest) => Promise<CompilerCompleteResult>;
   onCompiled: (sourcePath: string, result: CompilerCompileResult) => void;
   onDiagnostic: (diagnostic: CompilerDiagnostic) => void;
   onSourceLocation: (
@@ -51,6 +54,7 @@ export class TypstPreviewView extends ItemView {
   private closed = false;
 
   private forwardAbort: AbortController | null = null;
+  private completeAbort: AbortController | null = null;
   private activeRender: Promise<void> = Promise.resolve();
   constructor(leaf: WorkspaceLeaf, private readonly options: TypstPreviewViewOptions) {
     super(leaf);
@@ -166,6 +170,50 @@ export class TypstPreviewView extends ItemView {
       return false;
     } finally {
       if (this.forwardAbort === active) this.forwardAbort = null;
+    }
+  }
+
+  /**
+   * The completions the retained document holds at a cursor, or null when this
+   * preview has nothing retained. A completion never starts a compile, so a
+   * preview that has not produced a document yet simply offers nothing.
+   */
+  async complete(
+    source: string,
+    sourceText: string,
+    byteOffset: number,
+    explicit: boolean,
+    isCurrent: () => boolean = () => true,
+  ): Promise<CompilerCompleteResult | null> {
+    const revision = this.activeRevision;
+    if (revision === null || this.state.sourcePath === null || !isCurrent()) return null;
+
+    const active = new AbortController();
+    this.completeAbort?.abort();
+    this.completeAbort = active;
+    try {
+      const result = await this.options.complete({
+        revision,
+        source,
+        sourceText,
+        byteOffset,
+        explicit,
+        signal: active.signal,
+      });
+      if (
+        active.signal.aborted
+        || this.completeAbort !== active
+        || result.revision !== revision
+        || this.activeRevision !== revision
+        || !isCurrent()
+      ) {
+        return null;
+      }
+      return result;
+    } catch {
+      return null;
+    } finally {
+      if (this.completeAbort === active) this.completeAbort = null;
     }
   }
 
@@ -308,6 +356,8 @@ export class TypstPreviewView extends ItemView {
     this.jumpAbort = null;
     this.forwardAbort?.abort();
     this.forwardAbort = null;
+    this.completeAbort?.abort();
+    this.completeAbort = null;
   }
 
   private createToolbarButton(

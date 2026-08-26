@@ -1,12 +1,19 @@
-const PROTOCOL_VERSION = 3;
+const PROTOCOL_VERSION = 5;
 const DEFAULT_TIMEOUT_MS = 15_000;
 const DEFAULT_INITIALIZATION_TIMEOUT_MS = 120_000;
 const DEFAULT_MAX_OUTPUT_BYTES = 70 * 1024 * 1024;
 export const DEFAULT_MAX_PDF_BYTES = 50 * 1024 * 1024;
 const DEFAULT_MAX_REQUEST_BYTES = 64 * 1024;
+// A completion request carries the buffer the cursor belongs to, so it cannot
+// fit the request cap that guards the compile path. It gets its own bound,
+// matching the compiler's, rather than travelling unbounded.
+const DEFAULT_MAX_COMPLETION_BYTES = 2 * 1024 * 1024;
 const MAX_PAGES = 1_000;
 const MAX_DEPENDENCIES = 10_000;
 const MAX_DIAGNOSTICS = 1_000;
+// Matches the compiler's own completion cap; math mode alone offers a few
+// thousand symbol names.
+const MAX_COMPLETIONS = 8_192;
 const BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
 
 export type CompilerClientErrorCode =
@@ -44,6 +51,13 @@ export interface WasmEngine {
   compile(request: EngineCompileRequest): Promise<unknown>;
   jump(request: { revision: number; page: number; xPt: number; yPt: number }): Promise<string>;
   forward(request: { revision: number; source: string; byteOffset: number }): Promise<string>;
+  complete(request: {
+    revision: number;
+    source: string;
+    sourceText: string;
+    byteOffset: number;
+    explicit: boolean;
+  }): Promise<string>;
   dispose(): void;
 }
 
@@ -59,11 +73,12 @@ export interface TypstianCompilerClientOptions {
   maxOutputBytes?: number;
   maxPdfBytes?: number;
   maxRequestBytes?: number;
+  maxCompletionBytes?: number;
   engineFactory?: WasmEngineFactory;
 }
 
 export interface CompilerEnvironment {
-  protocolVersion: 3;
+  protocolVersion: 5;
   typstVersion: string;
 }
 
@@ -146,7 +161,37 @@ export interface CompilerForwardResult {
   positions: CompilerForwardPosition[];
 }
 
-type RequestKind = "environment" | "compile" | "jump" | "forward";
+export interface CompilerCompleteRequest {
+  revision: number;
+  source: string;
+  /**
+   * The buffer the cursor belongs to. The compiler reconciles it against the
+   * snapshot it retained, so the cursor keeps its meaning across the keystrokes
+   * that landed since the last compile.
+   */
+  sourceText: string;
+  byteOffset: number;
+  /** Whether the user asked for completions outright rather than by typing. */
+  explicit: boolean;
+  signal?: AbortSignal;
+}
+
+export interface CompilerCompletion {
+  kind: string;
+  label: string;
+  /** Snippet-syntax replacement text, when it differs from the label. */
+  apply?: string;
+  detail?: string;
+}
+
+export interface CompilerCompleteResult {
+  revision: number;
+  /** Where the completed word starts, as a UTF-8 offset into `sourceText`. */
+  byteOffset: number;
+  completions: CompilerCompletion[];
+}
+
+type RequestKind = "environment" | "compile" | "jump" | "forward" | "complete";
 
 interface PendingRequest<T = unknown> {
   kind: RequestKind;
@@ -422,6 +467,51 @@ function parseForward(value: unknown, revision: number): CompilerForwardResult {
   };
 }
 
+function parseComplete(
+  value: unknown,
+  revision: number,
+  byteOffset: number,
+): CompilerCompleteResult {
+  const response = requireRecord(value, "completion response");
+  if (response.type === "error") throw transportError(parseError(response, "complete", revision));
+  if (response.type === "stale-revision") {
+    requireInteger(response.expectedRevision, "expected revision");
+    throw new CompilerClientError("stale", "Preview revision is no longer active.");
+  }
+  if (response.revision !== revision) {
+    throw malformed("Compiler returned the wrong completion revision.");
+  }
+  // Nothing to offer still answers with the cursor, so the caller never has to
+  // special-case an absent replacement range.
+  if (response.type === "no-completions") return { revision, byteOffset, completions: [] };
+  if (response.type !== "completions" || !Array.isArray(response.completions)) {
+    throw malformed("Compiler returned the wrong completion response.");
+  }
+  if (response.completions.length > MAX_COMPLETIONS) {
+    throw malformed("Compiler returned too many completions.");
+  }
+  const start = requireInteger(response.byteOffset, "completion byte offset");
+  if (start > byteOffset) throw malformed("Compiler returned a completion past the cursor.");
+  return {
+    revision,
+    byteOffset: start,
+    completions: response.completions.map((item) => {
+      const completion = requireRecord(item, "completion");
+      const result: CompilerCompletion = {
+        kind: requireString(completion.kind, "completion kind"),
+        label: requireString(completion.label, "completion label"),
+      };
+      if (completion.apply !== null && completion.apply !== undefined) {
+        result.apply = requireString(completion.apply, "completion replacement");
+      }
+      if (completion.detail !== null && completion.detail !== undefined) {
+        result.detail = requireString(completion.detail, "completion detail");
+      }
+      return result;
+    }),
+  };
+}
+
 function requirePositiveOption(value: number, label: string): number {
   if (!Number.isSafeInteger(value) || value <= 0) {
     throw new CompilerClientError("invalid-input", `${label} must be a positive integer.`);
@@ -452,6 +542,7 @@ export class TypstianCompilerClient {
   private readonly maxOutputBytes: number;
   private readonly maxPdfBytes: number;
   private readonly maxRequestBytes: number;
+  private readonly maxCompletionBytes: number;
   private compileOverlay: ReadonlyMap<string, Uint8Array> | undefined;
   private readonly engineFactory: WasmEngineFactory;
   private readonly pending = new Set<PendingRequest>();
@@ -484,6 +575,10 @@ export class TypstianCompilerClient {
     this.maxRequestBytes = requirePositiveOption(
       options.maxRequestBytes ?? DEFAULT_MAX_REQUEST_BYTES,
       "Request limit",
+    );
+    this.maxCompletionBytes = requirePositiveOption(
+      options.maxCompletionBytes ?? DEFAULT_MAX_COMPLETION_BYTES,
+      "Completion limit",
     );
     this.engineFactory = options.engineFactory ?? createWasmEngine;
   }
@@ -583,6 +678,44 @@ export class TypstianCompilerClient {
     );
   }
 
+  /**
+   * Offers the completions of the retained document at a cursor. Like `jump`
+   * and `forward` it answers from the snapshot the visible PDF came from, so it
+   * never starts a compile of its own.
+   */
+  complete(request: CompilerCompleteRequest): Promise<CompilerCompleteResult> {
+    try {
+      validateRevision(request.revision);
+      validateVaultPath(request.source, "Completion source");
+      if (!Number.isSafeInteger(request.byteOffset) || request.byteOffset < 0) {
+        throw new CompilerClientError("invalid-input", "Completion byte offset is invalid.");
+      }
+      if (
+        typeof request.sourceText !== "string"
+        || Buffer.byteLength(request.sourceText) > this.maxCompletionBytes
+      ) {
+        throw new CompilerClientError("invalid-input", "Completion source text is too large.");
+      }
+    } catch (error) {
+      return Promise.reject(asClientError(error, "invalid-input", "Completion request is invalid."));
+    }
+    if (request.revision !== this.latestDocumentRevision) {
+      return Promise.reject(new CompilerClientError("stale", "Preview revision is no longer active."));
+    }
+    return this.enqueue(
+      "complete",
+      {
+        revision: request.revision,
+        source: request.source,
+        sourceText: request.sourceText,
+        byteOffset: request.byteOffset,
+        explicit: request.explicit,
+      },
+      (response) => parseComplete(response, request.revision, request.byteOffset),
+      request.signal,
+    );
+  }
+
   close(): void {
     if (this.closed) return;
     this.closed = true;
@@ -607,7 +740,8 @@ export class TypstianCompilerClient {
     }
 
     const encodedRequest = JSON.stringify(payload);
-    if (Buffer.byteLength(encodedRequest) > this.maxRequestBytes) {
+    const requestLimit = kind === "complete" ? this.maxCompletionBytes : this.maxRequestBytes;
+    if (Buffer.byteLength(encodedRequest) > requestLimit) {
       return Promise.reject(new CompilerClientError("invalid-input", "Typst engine request is too large."));
     }
 
@@ -689,9 +823,14 @@ export class TypstianCompilerClient {
               error instanceof CompilerClientError
                 ? error
                 : malformed("Typst engine returned a malformed response.");
+            // A completion is an optional read of retained state: refusing the
+            // one bad reply is enough. Compile, jump, and forward still fail the
+            // whole session, because a document they cannot trust is one the
+            // preview is already showing.
             if (
-              clientError.code === "malformed-protocol"
-              || clientError.code === "output-limit"
+              kind !== "complete"
+              && (clientError.code === "malformed-protocol"
+                || clientError.code === "output-limit")
             ) {
               this.failSession(clientError);
             } else {
@@ -790,6 +929,16 @@ export class TypstianCompilerClient {
       case "forward":
         return engine.forward(
           payload as { revision: number; source: string; byteOffset: number },
+        );
+      case "complete":
+        return engine.complete(
+          payload as {
+            revision: number;
+            source: string;
+            sourceText: string;
+            byteOffset: number;
+            explicit: boolean;
+          },
         );
     }
   }

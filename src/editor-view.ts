@@ -1,3 +1,10 @@
+import {
+  autocompletion,
+  snippetCompletion,
+  type Completion,
+  type CompletionContext,
+  type CompletionResult,
+} from "@codemirror/autocomplete";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import {
   defaultHighlightStyle,
@@ -19,7 +26,7 @@ import {
 } from "@codemirror/view";
 import { TextFileView, type WorkspaceLeaf } from "obsidian";
 
-import type { CompilerDiagnostic } from "./compiler-client";
+import type { CompilerCompletion, CompilerDiagnostic } from "./compiler-client";
 import { typstLanguage } from "./language";
 
 export const TYPST_VIEW_TYPE = "typst-editor";
@@ -30,10 +37,59 @@ export interface TypstForwardSearchRequest {
   byteOffset: number;
 }
 
+export interface TypstCompletionRequest {
+  sourcePath: string;
+  sourceText: string;
+  byteOffset: number;
+  /** True when the user asked for completions rather than merely typing. */
+  explicit: boolean;
+}
+
+export interface TypstCompletionResponse {
+  /** Where the completed word starts, as a UTF-8 offset into `sourceText`. */
+  byteOffset: number;
+  completions: readonly CompilerCompletion[];
+}
+
 export interface TypstEditorViewOptions {
   onDirty?: () => void;
   onForwardSearch?: (request: TypstForwardSearchRequest) => void;
+  onComplete?: (
+    request: TypstCompletionRequest,
+  ) => Promise<TypstCompletionResponse | null>;
   onClose?: () => void;
+}
+
+/**
+ * Typst's completion kinds mapped onto the icons CodeMirror knows. Anything
+ * unmapped renders as plain text rather than borrowing the wrong icon.
+ */
+const COMPLETION_TYPES: Record<string, string> = {
+  func: "function",
+  type: "type",
+  param: "property",
+  constant: "constant",
+  package: "namespace",
+  label: "variable",
+  syntax: "keyword"
+};
+
+/**
+ * Which characters may be typed after a completion query without asking the
+ * compiler again. A dot or a bracket changes what the cursor is inside, so
+ * those end the run and provoke a fresh request.
+ */
+const COMPLETION_WORD = /^[\p{L}\p{N}_-]*$/u;
+
+function toCodeMirrorCompletion(item: CompilerCompletion): Completion {
+  const completion: Completion = {
+    label: item.label,
+    ...(COMPLETION_TYPES[item.kind] === undefined ? {} : { type: COMPLETION_TYPES[item.kind] }),
+    ...(item.detail === undefined ? {} : { detail: item.detail })
+  };
+  // Typst describes a replacement in the same `${placeholder}` snippet syntax
+  // CodeMirror reads, so `#figure` can land the cursor inside the body.
+  return item.apply === undefined ? completion : snippetCompletion(item.apply, completion);
 }
 
 export function utf8ByteOffset(sourceText: string, position: number): number | null {
@@ -47,6 +103,23 @@ export function utf8ByteOffset(sourceText: string, position: number): number | n
     return null;
   }
   return new TextEncoder().encode(sourceText.slice(0, position)).length;
+}
+
+/**
+ * The inverse of `utf8ByteOffset`: the compiler counts UTF-8 bytes and the
+ * editor counts UTF-16 units, so every offset crossing that boundary passes
+ * through one of these two. A byte offset inside a character has no position.
+ */
+export function utf16Position(sourceText: string, byteOffset: number): number | null {
+  if (!Number.isSafeInteger(byteOffset) || byteOffset < 0) return null;
+  const encoded = new TextEncoder().encode(sourceText);
+  if (byteOffset > encoded.length) return null;
+  try {
+    return new TextDecoder("utf-8", { fatal: true })
+      .decode(encoded.subarray(0, byteOffset)).length;
+  } catch {
+    return null;
+  }
 }
 
 const editorExtensions: Extension = [
@@ -76,6 +149,9 @@ export class TypstEditorView extends TextFileView {
   private applyingExternalData = false;
 
   private readonly onForwardSearch: (request: TypstForwardSearchRequest) => void;
+  private readonly onComplete: (
+    request: TypstCompletionRequest,
+  ) => Promise<TypstCompletionResponse | null>;
   private readonly onClosed: () => void;
   private dirty = false;
   private editGeneration = 0;
@@ -83,6 +159,7 @@ export class TypstEditorView extends TextFileView {
     super(leaf);
     this.onDirty = options.onDirty ?? (() => undefined);
     this.onForwardSearch = options.onForwardSearch ?? (() => undefined);
+    this.onComplete = options.onComplete ?? (() => Promise.resolve(null));
     this.onClosed = options.onClose ?? (() => undefined);
     this.contentEl.classList.add("typstian-editor");
     this.editorView = new EditorView({
@@ -177,17 +254,8 @@ export class TypstEditorView extends TextFileView {
   }
 
   revealByteOffset(byteOffset: number): boolean {
-    if (!Number.isSafeInteger(byteOffset) || byteOffset < 0) return false;
-    const encoded = new TextEncoder().encode(this.editorView.state.doc.toString());
-    if (byteOffset > encoded.length) return false;
-
-    let position: number;
-    try {
-      position = new TextDecoder("utf-8", { fatal: true })
-        .decode(encoded.subarray(0, byteOffset)).length;
-    } catch {
-      return false;
-    }
+    const position = utf16Position(this.editorView.state.doc.toString(), byteOffset);
+    if (position === null) return false;
 
     this.editorView.dispatch({
       selection: { anchor: position },
@@ -224,11 +292,50 @@ export class TypstEditorView extends TextFileView {
     return { from: targetLine.from + columnOffset, lineTo: targetLine.to };
   }
 
+  /**
+   * Answers CodeMirror with the completions the compiler holds for the cursor.
+   * The compiler answers from the document of the last compile, so a reply that
+   * outlived its buffer is dropped rather than applied at a moved position; and
+   * a file the compiler does not own never asks at all.
+   */
+  private readonly completionSource = async (
+    context: CompletionContext,
+  ): Promise<CompletionResult | null> => {
+    const file = this.file;
+    if (file === null || file.extension !== "typ") return null;
+    const sourceText = context.state.doc.toString();
+    const byteOffset = utf8ByteOffset(sourceText, context.pos);
+    if (byteOffset === null) return null;
+
+    const response = await this.onComplete({
+      sourcePath: file.path,
+      sourceText,
+      byteOffset,
+      explicit: context.explicit
+    });
+    if (
+      response === null
+      || response.completions.length === 0
+      || context.aborted
+      || this.editorView.state.doc.toString() !== sourceText
+    ) {
+      return null;
+    }
+    const from = utf16Position(sourceText, response.byteOffset);
+    if (from === null || from > context.pos) return null;
+    return {
+      from,
+      options: response.completions.map(toCodeMirrorCompletion),
+      validFor: COMPLETION_WORD
+    };
+  };
+
   private createState(doc: string): EditorState {
     return EditorState.create({
       doc,
       extensions: [
         editorExtensions,
+        autocompletion({ override: [this.completionSource] }),
         EditorView.updateListener.of((update) => {
           if (update.docChanged && !this.applyingExternalData) {
             this.data = update.state.doc.toString();

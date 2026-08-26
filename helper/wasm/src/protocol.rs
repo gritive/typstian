@@ -17,6 +17,32 @@ pub struct ForwardRequest {
     pub byte_offset: usize,
 }
 
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CompleteRequest {
+    pub revision: u64,
+    pub source: String,
+    /// The buffer the cursor belongs to, which is usually a few keystrokes
+    /// ahead of the snapshot the session retained. The compiler reconciles the
+    /// two rather than assuming the offset means the same thing in both.
+    pub source_text: String,
+    pub byte_offset: usize,
+    /// Whether the user asked for completions outright. Typst offers far less
+    /// on an implicit request, which is what keeps plain prose quiet.
+    pub explicit: bool,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CompletionItem {
+    pub kind: String,
+    pub label: String,
+    /// The text to insert, in snippet syntax (`${name}` placeholders), when it
+    /// differs from the label.
+    pub apply: Option<String>,
+    pub detail: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct RenderedPosition {
@@ -52,6 +78,29 @@ pub enum ClickResponse {
         byte_offset: usize,
     },
     NoSource {
+        revision: u64,
+    },
+    InvalidRequest {
+        revision: u64,
+    },
+    StaleRevision {
+        expected: u64,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(tag = "status", rename_all = "kebab-case")]
+pub enum CompleteResponse {
+    Completions {
+        revision: u64,
+        /// Where the completed word starts in the *requesting* buffer, so the
+        /// editor replaces the prefix the user already typed instead of
+        /// doubling it.
+        #[serde(rename = "byteOffset")]
+        byte_offset: usize,
+        completions: Vec<CompletionItem>,
+    },
+    NoCompletions {
         revision: u64,
     },
     InvalidRequest {

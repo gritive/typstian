@@ -15,7 +15,7 @@ use typst::syntax::{FileId, RootedPath, Source, VirtualPath, VirtualRoot};
 use typst::text::{Font, FontBook, FontInfo};
 use typst::utils::LazyHash;
 use typst::{LibraryExt, World, WorldExt};
-use typst_ide::{IdeWorld, Jump, jump_from_click, jump_from_cursor};
+use typst_ide::{CompletionKind, IdeWorld, Jump, autocomplete, jump_from_click, jump_from_cursor};
 use typst_kit::fonts::{FontSource, FontStore};
 use typst_layout::PagedDocument;
 use typst_pdf::PdfOptions;
@@ -25,8 +25,8 @@ use wasm_bindgen::prelude::*;
 pub mod protocol;
 
 use protocol::{
-    ClickRequest, ClickResponse, Diagnostic, ForwardRequest, ForwardResponse, PageDimensions,
-    RenderedPosition,
+    ClickRequest, ClickResponse, CompleteRequest, CompleteResponse, CompletionItem, Diagnostic,
+    ForwardRequest, ForwardResponse, PageDimensions, RenderedPosition,
 };
 
 /// New Computer Modern Math, Typst's default math face, vendored from
@@ -34,7 +34,7 @@ use protocol::{
 /// keeps `main.js` far smaller than embedding the full typst-assets font set.
 const EMBEDDED_MATH_FONT: &[u8] = include_bytes!("../assets/NewCMMath-Book.otf");
 
-const PROTOCOL_VERSION: u32 = 3;
+const PROTOCOL_VERSION: u32 = 5;
 const TYPST_VERSION: &str = "0.15.1";
 const MAX_VAULT_FILE_BYTES: usize = 50 * 1024 * 1024;
 const MAX_TOTAL_INPUT_BYTES: usize = 70 * 1024 * 1024;
@@ -43,6 +43,14 @@ const MAX_DEPENDENCIES: usize = 10_000;
 const MAX_FONT_FILE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_FONT_FACES: usize = 20_000;
 const MAX_FONT_PATH_BYTES: usize = 4_096;
+/// Typst offers every symbol name in math mode, a few thousand entries. The cap
+/// only guards against an unbounded response; it sits above that list so a
+/// normal request is never truncated.
+const MAX_COMPLETIONS: usize = 8_192;
+/// The live buffer travels with every completion request, so it carries its own
+/// bound rather than riding on the compile path's per-file limit; a Typst source
+/// a person edits by hand is orders of magnitude below this.
+const MAX_COMPLETION_SOURCE_BYTES: usize = 2 * 1024 * 1024;
 
 /// The host's wall clock at the start of a compile. The compiler has neither a
 /// clock nor a timezone database of its own, so the host samples both the
@@ -453,6 +461,102 @@ fn protocol_json(value: impl Serialize, request_type: &str) -> Result<String, Js
     serde_json::to_string(&value).map_err(|error| JsValue::from_str(&error.to_string()))
 }
 
+/// The longest common prefix of two strings that ends on a character boundary
+/// in both. Stopping mid-character would make every offset past it meaningless.
+fn common_prefix(live: &str, snapshot: &str) -> usize {
+    let mut length = live
+        .as_bytes()
+        .iter()
+        .zip(snapshot.as_bytes())
+        .take_while(|(left, right)| left == right)
+        .count();
+    while length > 0 && !(live.is_char_boundary(length) && snapshot.is_char_boundary(length)) {
+        length -= 1;
+    }
+    length
+}
+
+/// The longest common suffix that neither overlaps `prefix` nor splits a
+/// character.
+fn common_suffix(live: &str, snapshot: &str, prefix: usize) -> usize {
+    let mut length = live
+        .as_bytes()
+        .iter()
+        .rev()
+        .zip(snapshot.as_bytes().iter().rev())
+        .take_while(|(left, right)| left == right)
+        .count()
+        .min(live.len().min(snapshot.len()) - prefix);
+    while length > 0
+        && !(live.is_char_boundary(live.len() - length)
+            && snapshot.is_char_boundary(snapshot.len() - length))
+    {
+        length -= 1;
+    }
+    length
+}
+
+/// How the buffer the user is typing in lines up with the snapshot the session
+/// retained. Completions are computed in snapshot coordinates, so a live cursor
+/// only means something there when the two texts differ by a single splice that
+/// ends at the cursor: everything before and after that splice is shared, so the
+/// cursor names the same point in both. Anything else is refused rather than
+/// guessed — a cursor mapped onto the wrong syntax node describes the wrong
+/// document.
+struct CursorMapping {
+    /// The cursor in snapshot coordinates.
+    snapshot_cursor: usize,
+    /// Where the splice starts. Offsets up to here mean the same in both texts.
+    prefix: usize,
+}
+
+impl CursorMapping {
+    /// Requires a cursor already known to be a character boundary of `live`.
+    fn resolve(live: &str, snapshot: &str, cursor: usize) -> Option<Self> {
+        if live == snapshot {
+            return Some(Self {
+                snapshot_cursor: cursor,
+                prefix: cursor,
+            });
+        }
+        let prefix = common_prefix(live, snapshot);
+        let suffix = common_suffix(live, snapshot, prefix);
+        if cursor != live.len() - suffix {
+            return None;
+        }
+        let snapshot_cursor = snapshot.len() - suffix;
+        (snapshot_cursor >= prefix && snapshot.is_char_boundary(snapshot_cursor)).then_some(Self {
+            snapshot_cursor,
+            prefix,
+        })
+    }
+
+    /// A snapshot offset in the requesting buffer's coordinates. An offset past
+    /// the splice start has no image: the text it named is exactly the text the
+    /// user has since replaced.
+    fn to_live(&self, offset: usize) -> Option<usize> {
+        (offset <= self.prefix).then_some(offset)
+    }
+}
+
+/// The wire name of a completion kind. Typst's own `Serialize` would nest the
+/// symbol variant's payload, and the editor only needs a flat tag to pick an
+/// icon.
+fn completion_kind(kind: &CompletionKind) -> &'static str {
+    match kind {
+        CompletionKind::Syntax => "syntax",
+        CompletionKind::Func => "func",
+        CompletionKind::Type => "type",
+        CompletionKind::Param => "param",
+        CompletionKind::Constant => "constant",
+        CompletionKind::Path => "path",
+        CompletionKind::Package => "package",
+        CompletionKind::Label => "label",
+        CompletionKind::Font => "font",
+        CompletionKind::Symbol(_) => "symbol",
+    }
+}
+
 #[derive(Default)]
 pub struct Session {
     revision: Option<u64>,
@@ -661,6 +765,79 @@ impl Session {
         }
     }
 
+    /// The snapshot of a project source that produced the visible PDF. Every
+    /// cursor-driven request answers from this snapshot rather than the buffer
+    /// the user is currently typing in, so none of them can trigger a compile of
+    /// its own.
+    fn retained_source(world: &InMemoryWorld, source: &str) -> Option<Source> {
+        let path = normalize_path(source).ok()?;
+        let vpath = VirtualPath::new(path).ok()?;
+        let id = FileId::new(RootedPath::new(VirtualRoot::Project, vpath));
+        world.source(id).ok()
+    }
+
+    pub fn complete(&self, request: CompleteRequest) -> CompleteResponse {
+        let Some(revision) = self.revision else {
+            return CompleteResponse::InvalidRequest {
+                revision: request.revision,
+            };
+        };
+        if request.revision != revision {
+            return CompleteResponse::StaleRevision { expected: revision };
+        }
+        let (Some(world), Some(document)) = (self.world.as_ref(), self.document.as_ref()) else {
+            return CompleteResponse::InvalidRequest { revision };
+        };
+        if request.source_text.len() > MAX_COMPLETION_SOURCE_BYTES
+            || request.byte_offset > request.source_text.len()
+            || !request.source_text.is_char_boundary(request.byte_offset)
+        {
+            return CompleteResponse::InvalidRequest { revision };
+        }
+        let Some(source) = Self::retained_source(world, &request.source) else {
+            return CompleteResponse::InvalidRequest { revision };
+        };
+        // The cursor belongs to the buffer the user is typing in; the retained
+        // snapshot may be a few keystrokes behind it.
+        let Some(mapping) =
+            CursorMapping::resolve(&request.source_text, source.text(), request.byte_offset)
+        else {
+            return CompleteResponse::NoCompletions { revision };
+        };
+        // The document carries the labels and the values of evaluated
+        // expressions, so passing it is what makes `@ref` and field completions
+        // more than syntax guesses.
+        let Some((offset, items)) = autocomplete(
+            world,
+            Some(document),
+            &source,
+            mapping.snapshot_cursor,
+            request.explicit,
+        ) else {
+            return CompleteResponse::NoCompletions { revision };
+        };
+        let Some(byte_offset) = mapping.to_live(offset) else {
+            return CompleteResponse::NoCompletions { revision };
+        };
+        if items.is_empty() {
+            return CompleteResponse::NoCompletions { revision };
+        }
+        CompleteResponse::Completions {
+            revision,
+            byte_offset,
+            completions: items
+                .into_iter()
+                .take(MAX_COMPLETIONS)
+                .map(|item| CompletionItem {
+                    kind: completion_kind(&item.kind).into(),
+                    label: item.label.into(),
+                    apply: item.apply.map(Into::into),
+                    detail: item.detail.map(Into::into),
+                })
+                .collect(),
+        }
+    }
+
     pub fn forward(&self, request: ForwardRequest) -> ForwardResponse {
         let Some(revision) = self.revision else {
             return ForwardResponse::InvalidRequest {
@@ -673,14 +850,7 @@ impl Session {
         let (Some(world), Some(document)) = (self.world.as_ref(), self.document.as_ref()) else {
             return ForwardResponse::InvalidRequest { revision };
         };
-        let Ok(path) = normalize_path(&request.source) else {
-            return ForwardResponse::InvalidRequest { revision };
-        };
-        let Ok(vpath) = VirtualPath::new(path) else {
-            return ForwardResponse::InvalidRequest { revision };
-        };
-        let id = FileId::new(RootedPath::new(VirtualRoot::Project, vpath));
-        let Ok(source) = world.source(id) else {
+        let Some(source) = Self::retained_source(world, &request.source) else {
             return ForwardResponse::InvalidRequest { revision };
         };
         if request.byte_offset > source.text().len()
@@ -853,6 +1023,12 @@ impl TypstianWasmSession {
         protocol_json(self.inner.click(request), "jump")
     }
 
+    pub fn complete(&self, request_json: &str) -> Result<String, JsValue> {
+        let request = serde_json::from_str(request_json)
+            .map_err(|error| JsValue::from_str(&format!("invalid complete request: {error}")))?;
+        protocol_json(self.inner.complete(request), "complete")
+    }
+
     pub fn forward(&self, request_json: &str) -> Result<String, JsValue> {
         let request = serde_json::from_str(request_json)
             .map_err(|error| JsValue::from_str(&format!("invalid forward request: {error}")))?;
@@ -935,6 +1111,63 @@ mod font_tests {
 impl Default for TypstianWasmSession {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod cursor_mapping_tests {
+    use super::*;
+
+    #[test]
+    fn maps_a_cursor_through_an_unchanged_buffer() {
+        let mapping = CursorMapping::resolve("café #im", "café #im", 5).unwrap();
+
+        assert_eq!(mapping.snapshot_cursor, 5);
+        assert_eq!(mapping.to_live(5), Some(5));
+        assert_eq!(mapping.to_live(0), Some(0));
+    }
+
+    #[test]
+    fn maps_a_cursor_back_across_text_typed_since_the_compile() {
+        // `im` typed at the cursor, past a multi-byte character and with
+        // untouched text after it.
+        let mapping = CursorMapping::resolve("café #im rest", "café # rest", 9).unwrap();
+
+        assert_eq!(mapping.snapshot_cursor, 7);
+        // A word starting at or before the splice names the same byte in both.
+        assert_eq!(mapping.to_live(6), Some(6));
+        assert_eq!(mapping.to_live(7), Some(7));
+        // Nothing after it does.
+        assert_eq!(mapping.to_live(8), None);
+    }
+
+    #[test]
+    fn maps_a_cursor_back_across_a_deletion_at_the_cursor() {
+        let mapping = CursorMapping::resolve("café # rest", "café #im rest", 7).unwrap();
+
+        assert_eq!(mapping.snapshot_cursor, 9);
+        assert_eq!(mapping.to_live(7), Some(7));
+        // The word started inside the text the user just deleted.
+        assert_eq!(mapping.to_live(8), None);
+    }
+
+    #[test]
+    fn refuses_a_splice_that_does_not_end_at_the_cursor() {
+        // Edited before the cursor, but the edit does not reach it.
+        assert!(CursorMapping::resolve("Xcafé #im", "café #im", 9).is_none());
+        // Edited after the cursor.
+        assert!(CursorMapping::resolve("café #im!", "café #im", 4).is_none());
+    }
+
+    #[test]
+    fn keeps_the_splice_bounds_on_character_boundaries() {
+        // `각` and `가` share their first two bytes, so a byte-wise prefix would
+        // stop inside a character and every offset after it would be a lie.
+        let mapping = CursorMapping::resolve("가각", "가가", 6).unwrap();
+
+        assert_eq!(mapping.snapshot_cursor, 6);
+        assert_eq!(mapping.to_live(3), Some(3));
+        assert_eq!(mapping.to_live(4), None);
     }
 }
 

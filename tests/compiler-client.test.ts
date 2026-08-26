@@ -38,6 +38,16 @@ class FakeWasmEngine implements WasmEngine {
     return this.request("forward", payload);
   }
 
+  complete(payload: {
+    revision: number;
+    source: string;
+    sourceText: string;
+    byteOffset: number;
+    explicit: boolean;
+  }): Promise<string> {
+    return this.request("complete", payload);
+  }
+
   respond(response: unknown): void {
     const pending = this.pending.shift();
     if (pending === undefined) throw new Error("No pending WASM request.");
@@ -103,9 +113,9 @@ describe("TypstianCompilerClient", () => {
       maxOutputBytes: 70 * 1024 * 1024,
     });
 
-    engines[0]!.respond({ type: "environment", protocolVersion: 3, typstVersion: "0.15.1" });
+    engines[0]!.respond({ type: "environment", protocolVersion: 5, typstVersion: "0.15.1" });
 
-    await expect(result).resolves.toEqual({ protocolVersion: 3, typstVersion: "0.15.1" });
+    await expect(result).resolves.toEqual({ protocolVersion: 5, typstVersion: "0.15.1" });
     expect(engineFactory).toHaveBeenCalledOnce();
     client.close();
   });
@@ -172,6 +182,140 @@ describe("TypstianCompilerClient", () => {
       revision: 7,
       positions: [{ page: 1, xPt: 10, yPt: 20 }],
     });
+    client.close();
+  });
+
+  it("completes against the retained document and refuses a superseded revision", async () => {
+    const { client, engines } = harness();
+    const compile = client.compile({ revision: 3, entryPath: "docs/main.typ" });
+    await vi.waitFor(() => expect(engines[0]?.calls).toHaveLength(1));
+    engines[0]!.respond({
+      type: "compiled",
+      revision: 3,
+      pdfBase64: pdf.toString("base64"),
+      pdfBytes: pdf.length,
+      pages: [{ widthPt: 240, heightPt: 180 }],
+      dependencies: ["docs/main.typ"],
+      diagnostics: [],
+    });
+    await compile;
+
+    const complete = client.complete({
+      revision: 3,
+      source: "docs/main.typ",
+      sourceText: "#im",
+      byteOffset: 9,
+      explicit: true,
+    });
+    await vi.waitFor(() =>
+      expect(engines[0]?.calls.at(-1)).toEqual({
+        kind: "complete",
+        payload: {
+          revision: 3,
+          source: "docs/main.typ",
+          sourceText: "#im",
+          byteOffset: 9,
+          explicit: true,
+        },
+      }),
+    );
+    engines[0]!.respond({
+      type: "completions",
+      revision: 3,
+      byteOffset: 8,
+      completions: [
+        { kind: "func", label: "image", apply: "image(\"${}\")", detail: "An image." },
+        { kind: "label", label: "intro" },
+      ],
+    });
+    await expect(complete).resolves.toEqual({
+      revision: 3,
+      byteOffset: 8,
+      completions: [
+        { kind: "func", label: "image", apply: "image(\"${}\")", detail: "An image." },
+        { kind: "label", label: "intro" },
+      ],
+    });
+
+    const sent = engines[0]!.calls.length;
+    const empty = client.complete({
+      revision: 3,
+      source: "docs/main.typ",
+      sourceText: "#im",
+      byteOffset: 9,
+      explicit: false,
+    });
+    await vi.waitFor(() => expect(engines[0]?.calls).toHaveLength(sent + 1));
+    engines[0]!.respond({ type: "no-completions", revision: 3 });
+    await expect(empty).resolves.toEqual({ revision: 3, byteOffset: 9, completions: [] });
+
+    // Completion never compiles: a revision the engine no longer retains is
+    // refused before it reaches the engine at all.
+    const callCount = engines[0]!.calls.length;
+    await expect(
+      client.complete({
+        revision: 4,
+        source: "docs/main.typ",
+        sourceText: "#im",
+        byteOffset: 0,
+        explicit: true,
+      }),
+    ).rejects.toMatchObject({ code: "stale" });
+    expect(engines[0]!.calls).toHaveLength(callCount);
+
+    await expect(
+      client.complete({
+        revision: 3,
+        source: "../outside.typ",
+        sourceText: "#im",
+        byteOffset: 0,
+        explicit: true,
+      }),
+    ).rejects.toMatchObject({ code: "invalid-input" });
+
+    // The live buffer rides on the request, so it carries its own bound; the
+    // 64 KiB request cap that guards the compile path would refuse ordinary
+    // documents here.
+    const large = "x".repeat(200 * 1024);
+    const beforeWide = engines[0]!.calls.length;
+    const wide = client.complete({
+      revision: 3,
+      source: "docs/main.typ",
+      sourceText: large,
+      byteOffset: large.length,
+      explicit: true,
+    });
+    await vi.waitFor(() => expect(engines[0]?.calls).toHaveLength(beforeWide + 1));
+    engines[0]!.respond({ type: "no-completions", revision: 3 });
+    await expect(wide).resolves.toMatchObject({ completions: [] });
+
+    await expect(
+      client.complete({
+        revision: 3,
+        source: "docs/main.typ",
+        sourceText: "y".repeat(2 * 1024 * 1024 + 1),
+        byteOffset: 0,
+        explicit: true,
+      }),
+    ).rejects.toMatchObject({ code: "invalid-input" });
+
+    // A malformed completion reply is refused on its own; jump and compile
+    // still take the session down, so the engine survives here.
+    const engineCount = engines.length;
+    const beforeMalformed = engines[0]!.calls.length;
+    const malformed = client.complete({
+      revision: 3,
+      source: "docs/main.typ",
+      sourceText: "#im",
+      byteOffset: 9,
+      explicit: true,
+    });
+    await vi.waitFor(() => expect(engines[0]?.calls).toHaveLength(beforeMalformed + 1));
+    engines[0]!.respond({ type: "completions", revision: 3, byteOffset: 2, completions: "nope" });
+    await expect(malformed).rejects.toMatchObject({ code: "malformed-protocol" });
+    expect(engines[0]!.dispose).not.toHaveBeenCalled();
+    expect(engines).toHaveLength(engineCount);
+
     client.close();
   });
 
@@ -322,8 +466,8 @@ it("passes the pinned overlay snapshot to the engine compile request", async () 
 
     const environment = client.checkEnvironment();
     await vi.waitFor(() => expect(engines[1]?.calls).toHaveLength(1));
-    engines[1]!.respond({ type: "environment", protocolVersion: 3, typstVersion: "0.15.1" });
-    await expect(environment).resolves.toEqual({ protocolVersion: 3, typstVersion: "0.15.1" });
+    engines[1]!.respond({ type: "environment", protocolVersion: 5, typstVersion: "0.15.1" });
+    await expect(environment).resolves.toEqual({ protocolVersion: 5, typstVersion: "0.15.1" });
     client.close();
   });
 
@@ -370,7 +514,7 @@ it("passes the pinned overlay snapshot to the engine compile request", async () 
     await vi.waitFor(() => expect(outputHarness.engines[0]?.calls).toHaveLength(1));
     outputHarness.engines[0]!.respond({
       type: "environment",
-      protocolVersion: 3,
+      protocolVersion: 5,
       typstVersion: "0.15.1",
     });
     await expect(environment).rejects.toMatchObject({ code: "output-limit" });
@@ -441,7 +585,7 @@ it("passes the pinned overlay snapshot to the engine compile request", async () 
     );
     engines[0]!.respond({
       type: "environment",
-      protocolVersion: 3,
+      protocolVersion: 5,
       typstVersion: "0.15.1",
     });
     await expect(environment).resolves.toMatchObject({ typstVersion: "0.15.1" });

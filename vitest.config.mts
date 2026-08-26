@@ -7,6 +7,7 @@ export default defineConfig({
       obsidian: fileURLToPath(new URL("./tests/stubs/obsidian.ts", import.meta.url))
     },
     dedupe: [
+      "@codemirror/autocomplete",
       "@codemirror/language",
       "@codemirror/lint",
       "@codemirror/search",

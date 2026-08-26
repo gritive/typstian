@@ -61,6 +61,7 @@ describe("TypstPreviewView", () => {
       onDiagnostic: () => undefined,
       disposeBackend: vi.fn(),
       pdfEngine: engine,
+      complete: vi.fn(),
       requestSaveLayout: () => undefined
     });
     await view.setState({ sourcePath: "book/main.typ", zoom: 2, fit: true }, {} as never);
@@ -129,6 +130,7 @@ describe("TypstPreviewView", () => {
       onDiagnostic: vi.fn(),
       disposeBackend: vi.fn(),
       pdfEngine: engine,
+      complete: vi.fn(),
       requestSaveLayout: vi.fn()
     });
     await view.setState({ sourcePath: "book/main.typ" }, {} as never);
@@ -171,6 +173,7 @@ describe("TypstPreviewView", () => {
       onDiagnostic: vi.fn(),
       disposeBackend: vi.fn(),
       pdfEngine: engine,
+      complete: vi.fn(),
       requestSaveLayout: vi.fn(),
     });
     await view.setState({ sourcePath: "book/main.typ" }, {} as never);
@@ -232,6 +235,7 @@ describe("TypstPreviewView", () => {
       onDiagnostic: vi.fn(),
       disposeBackend: vi.fn(),
       pdfEngine: engine,
+      complete: vi.fn(),
       requestSaveLayout: vi.fn()
     });
     await view.setState({ sourcePath: "book/main.typ", zoom: 2 }, {} as never);
@@ -282,6 +286,7 @@ describe("TypstPreviewView", () => {
       onDiagnostic: vi.fn(),
       disposeBackend: vi.fn(),
       pdfEngine: engine,
+      complete: vi.fn(),
       requestSaveLayout: vi.fn()
     });
     await view.setState({ sourcePath: "book/main.typ" }, {} as never);
@@ -327,6 +332,7 @@ describe("TypstPreviewView", () => {
       onDiagnostic: vi.fn(),
       disposeBackend: vi.fn(),
       pdfEngine: engine,
+      complete: vi.fn(),
       requestSaveLayout: vi.fn()
     });
     await view.setState({ sourcePath: "book/main.typ", zoom: 2 }, {} as never);
@@ -360,6 +366,7 @@ describe("TypstPreviewView", () => {
       onDiagnostic: vi.fn(),
       disposeBackend: vi.fn(),
       pdfEngine: engine,
+      complete: vi.fn(),
       requestSaveLayout: vi.fn()
     });
     await view.setState({ sourcePath: "book/main.typ" }, {} as never);
@@ -411,6 +418,7 @@ describe("TypstPreviewView", () => {
       onDiagnostic: vi.fn(),
       disposeBackend: vi.fn(),
       pdfEngine: engine,
+      complete: vi.fn(),
       requestSaveLayout: vi.fn(),
     });
     await view.setState({ sourcePath: "book/main.typ" }, {} as never);
@@ -458,6 +466,7 @@ describe("TypstPreviewView", () => {
       onDiagnostic: vi.fn(),
       disposeBackend: vi.fn(),
       pdfEngine: engine,
+      complete: vi.fn(),
       requestSaveLayout: vi.fn(),
     });
     await view.setState({ sourcePath: "book/main.typ" }, {} as never);
@@ -506,6 +515,7 @@ describe("TypstPreviewView", () => {
       onDiagnostic,
       disposeBackend: vi.fn(),
       pdfEngine: makePdfEngine().engine,
+      complete: vi.fn(),
       requestSaveLayout: () => undefined
     });
     await view.setState({ sourcePath: "book/main.typ" }, {} as never);
@@ -532,6 +542,7 @@ describe("TypstPreviewView", () => {
       onDiagnostic: vi.fn(),
       disposeBackend,
       pdfEngine: makePdfEngine().engine,
+      complete: vi.fn(),
       requestSaveLayout: vi.fn()
     });
     await view.setState({ sourcePath: "book/main.typ" }, {} as never);

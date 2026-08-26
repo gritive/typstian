@@ -11,7 +11,7 @@ await init({ module_or_path: wasm });
 
 const session = new TypstianWasmSession();
 const environment = JSON.parse(session.environment());
-if (environment.protocolVersion !== 2 || environment.typstVersion !== "0.15.1") {
+if (environment.protocolVersion !== 5 || environment.typstVersion !== "0.15.1") {
   throw new Error(`unexpected environment: ${session.environment()}`);
 }
 
