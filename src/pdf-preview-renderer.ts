@@ -275,11 +275,9 @@ private pageObserver: IntersectionObserver | null = null;
     }
 
     this.clearForwardMarker();
-    const marker = window.document.createElement("span");
-    marker.className = "typst-pdf-forward-marker";
+    const marker = page.createSpan({ cls: "typst-pdf-forward-marker" });
     marker.setAttribute("aria-hidden", "true");
     this.positionForwardMarker(page, marker, point);
-    page.append(marker);
     page.classList.add("typst-pdf-forward-target");
     this.forwardMarker = marker;
     this.forwardPoint = point;
@@ -362,16 +360,16 @@ private pageObserver: IntersectionObserver | null = null;
     const fallbackWidth = priorityBaseViewport?.width ?? 1;
     const fallbackHeight = priorityBaseViewport?.height ?? 1;
 
-    const container = window.document.createElement("div");
-    container.className = "typst-pdf-pages";
+    // Held in a fragment so the previous PDF stays visible until the priority
+    // page has rendered and the whole container can be swapped in at once.
+    const container = createFragment().createDiv({ cls: "typst-pdf-pages" });
 
     const pageElements = new Map<number, HTMLElement>();
     for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
       const geometry = previousGeometry.get(pageNumber);
       const baseWidth = geometry?.width ?? fallbackWidth;
       const baseHeight = geometry?.height ?? fallbackHeight;
-      const pageElement = window.document.createElement("div");
-      pageElement.className = "typst-pdf-page";
+      const pageElement = container.createDiv({ cls: "typst-pdf-page" });
       const scale = this.fit && baseWidth > 0
         ? fitScale(this.root, pageElement, baseWidth)
         : this.zoom;
@@ -487,20 +485,16 @@ private pageObserver: IntersectionObserver | null = null;
           if (pageElement !== undefined) {
             pageElement.replaceChildren();
             pageElement.dataset.rendered = "error";
-            const message = window.document.createElement("div");
-            message.className = "typst-pdf-page-error";
+            const message = pageElement.createDiv({ cls: "typst-pdf-page-error" });
             message.setAttribute("role", "alert");
             message.append("Could not render PDF page.");
-            const retry = window.document.createElement("button");
+            const retry = message.createEl("button", { cls: "typst-pdf-page-retry" });
             retry.type = "button";
-            retry.className = "typst-pdf-page-retry";
             retry.setAttribute("aria-label", `Retry PDF page ${pageNumber}`);
             retry.textContent = "Retry";
             retry.addEventListener("click", () => {
               void requestPage(pageNumber).catch(() => undefined);
             });
-            message.append(retry);
-            pageElement.append(message);
           }
         }
         throw error;
@@ -677,9 +671,24 @@ private pageObserver: IntersectionObserver | null = null;
       const viewportY = localY * viewport.height / contentHeight;
       emitPoint(viewportX, viewportY);
     };
-    const sourceButton = window.document.createElement("button");
+    const canvas = pageElement.createEl("canvas");
+    const context = canvas.getContext("2d");
+    if (context === null) {
+      throw new Error("A 2D canvas context is required for PDF preview.");
+    }
+    const raster = rasterDimensions(viewport, this.pixelRatio);
+    canvas.width = raster.width;
+    canvas.height = raster.height;
+    canvas.style.setProperty("--typst-pdf-canvas-width", `${viewport.width}px`);
+    canvas.style.setProperty("--typst-pdf-canvas-height", `${viewport.height}px`);
+    canvas.setAttribute("aria-hidden", "true");
+
+    const textLayer = pageElement.createDiv({ cls: "typst-pdf-text-layer textLayer" });
+    textLayer.setAttribute("aria-label", `Selectable text for PDF page ${pageNumber}`);
+    textLayer.style.setProperty("--scale-factor", String(scale));
+
+    const sourceButton = pageElement.createEl("button", { cls: "typst-pdf-source-jump" });
     sourceButton.type = "button";
-    sourceButton.className = "typst-pdf-source-jump";
     sourceButton.setAttribute("aria-label", `Jump to source from PDF page ${pageNumber}`);
     sourceButton.textContent = "Source";
     const onSourceClick = (): void => {
@@ -696,25 +705,6 @@ private pageObserver: IntersectionObserver | null = null;
     };
     removeListeners.add(removeListener);
 
-    const canvas = window.document.createElement("canvas");
-    const context = canvas.getContext("2d");
-    if (context === null) {
-      throw new Error("A 2D canvas context is required for PDF preview.");
-    }
-    const raster = rasterDimensions(viewport, this.pixelRatio);
-    canvas.width = raster.width;
-    canvas.height = raster.height;
-    canvas.style.setProperty("--typst-pdf-canvas-width", `${viewport.width}px`);
-    canvas.style.setProperty("--typst-pdf-canvas-height", `${viewport.height}px`);
-    canvas.setAttribute("aria-hidden", "true");
-    pageElement.append(canvas);
-
-    const textLayer = window.document.createElement("div");
-    textLayer.className = "typst-pdf-text-layer textLayer";
-    textLayer.setAttribute("aria-label", `Selectable text for PDF page ${pageNumber}`);
-    textLayer.style.setProperty("--scale-factor", String(scale));
-    pageElement.append(textLayer);
-    pageElement.append(sourceButton);
     if (
       this.forwardMarker !== null
       && this.forwardPoint?.page === pageNumber
