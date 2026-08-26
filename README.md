@@ -118,6 +118,18 @@ PDF bytes cross the WASM boundary as an `ArrayBuffer` and are transferred withou
 a renderer-side copy. PDF.js
 ships in `main.js`, including its in-process worker, and runs without a CDN.
 
+Typstian reads files through Node's `fs` rather than the vault API. A Typst
+compile resolves `#import` and `#image` paths against the compilation root, and
+the bundled compiler needs the bytes of every transitively referenced file plus
+the system fonts that live outside the vault; the vault API addresses neither.
+Every read goes through the rooted readers and bounds described above, and the
+plugin never writes to disk.
+
+The preview loads PDF.js with `isEvalSupported: false`, so its PostScript
+function compiler — the one path that would call `new Function` on document
+content — stays off. The remaining `new Function("")` occurrences in the bundle
+are PDF.js feature detection for that same setting.
+
 Typstian makes no network requests, sends no telemetry, performs no remote
 compilation, and does not launch or download native executables.
 The Typstian MIT license and complete third-party license and attribution notices
@@ -126,7 +138,7 @@ are embedded as a readable comment in the installed `main.js` and are also maint
 
 ## Current scope
 
-Version 0.0.1 does not provide mobile support,
+Typstian does not provide mobile support,
 completion, hover, rename, go-to-definition, formatting, semantic tokens, PDF
 export, rotated-page inverse search, glyph-exact forward round-tripping, or
 Tinymist's custom preview protocol. Syntax highlighting comes from

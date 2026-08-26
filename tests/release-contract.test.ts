@@ -121,6 +121,8 @@ describe("release contract", () => {
     expect(readme).toContain(
       "complete third-party license and attribution notices",
     );
+    expect(readme).toContain("isEvalSupported");
+    expect(readme).toContain("Node's `fs`");
     expect(readme).not.toContain("The Apache 2.0 notices");
     expect(agents).toContain("Brotli");
     expect(claude).toContain("Brotli");

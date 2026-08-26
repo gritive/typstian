@@ -87,7 +87,7 @@ and embeds the result in `main.js`; Community releases contain only `main.js`,
   15-second deadline. Timeout or abort terminates the worker and its retained
   document; the next request starts a clean session. PDF bytes cross the WASM boundary directly as an `ArrayBuffer`; the worker
   transfers it without a renderer-side copy.
-- Version 0.0.1 uses embedded fonts plus fonts in bounded standard OS
+- Typstian uses embedded fonts plus fonts in bounded standard OS
   directories. It does not accept additional font paths.
 - Compiler test fixtures are under `helper/tests/fixtures/`
   (`project/`, `diagnostics/`, `escape/`, `fonts/`), not `tests/fixtures/`.
