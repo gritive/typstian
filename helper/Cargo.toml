@@ -1,9 +1,0 @@
-[package]
-name = "typstian-core"
-version = "0.0.1"
-edition = "2024"
-license = "MIT"
-publish = false
-
-[dependencies]
-serde = { version = "1", features = ["derive"] }

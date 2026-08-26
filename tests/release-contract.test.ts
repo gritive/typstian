@@ -171,7 +171,6 @@ describe("release contract", () => {
     const packageLock = JSON.parse(
       fs.readFileSync(path.join(root, "package-lock.json"), "utf8"),
     ) as { packages?: Record<string, { license?: unknown }> };
-    const coreCargo = fs.readFileSync(path.join(root, "helper/Cargo.toml"), "utf8");
     const wasmCargo = fs.readFileSync(
       path.join(root, "helper/wasm/Cargo.toml"),
       "utf8",
@@ -190,9 +189,7 @@ describe("release contract", () => {
     const activeCargoLock = fs.readFileSync(
       path.join(root, "helper/wasm/Cargo.lock"),
     );
-    const inactiveCargoLock = fs.readFileSync(path.join(root, "helper/Cargo.lock"));
     const activeCargoLockHash = createHash("sha256").update(activeCargoLock).digest("hex");
-    const inactiveCargoLockHash = createHash("sha256").update(inactiveCargoLock).digest("hex");
     const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
 
     expect(license).toContain("MIT License");
@@ -202,7 +199,6 @@ describe("release contract", () => {
     expect(license).toContain("Permission is hereby granted");
     expect(packageJson.license).toBe("MIT");
     expect(packageLock.packages?.[""]?.license).toBe("MIT");
-    expect(coreCargo).toContain('license = "MIT"');
     expect(wasmCargo).toContain('license = "MIT"');
     expect(wasmPackage.license).toBe("MIT");
     expect(packageJson.scripts?.["build:wasm"]).toContain("--locked");
@@ -221,13 +217,12 @@ describe("release contract", () => {
       path.join(root, "scripts/verify-release-notices.mjs"),
     )).toBe(true);
     expect(noticeGenerator).toContain("metadata.workspace_root");
-    expect(noticeGenerator).not.toContain('join(projectRoot, "helper/Cargo.lock")');
     expect(notices).toContain(
       `helper/wasm/Cargo.lock SHA-256: ${activeCargoLockHash}`,
     );
-    expect(notices).not.toContain(
-      `helper/Cargo.lock SHA-256: ${inactiveCargoLockHash}`,
-    );
+    // One crate, one lock: the notices cannot be generated from a second,
+    // unshipped lockfile because there is no longer one to pick by mistake.
+    expect(fs.existsSync(path.join(root, "helper/Cargo.lock"))).toBe(false);
     expect(notices).toContain(license.trim());
     expect(notices).toContain("typst-assets 0.15.1");
     for (const requiredNotice of [

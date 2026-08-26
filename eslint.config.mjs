@@ -9,7 +9,6 @@ export default tseslint.config(
       "main.js",
       "node_modules",
       ".playwright-mcp",
-      "helper/target",
       "helper/wasm/pkg",
       "helper/wasm/target"
     ]

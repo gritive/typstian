@@ -14,6 +14,9 @@ npm run lint              # eslint . --max-warnings 0 (warnings fail)
 npm run build             # -> main.js with Brotli-embedded WASM
 npm run dev               # esbuild watch
 
+make                      # npm run build
+make clean                # drop the cargo cache, main.js, and coverage output
+
 cargo test   --manifest-path helper/wasm/Cargo.toml
 cargo clippy --manifest-path helper/wasm/Cargo.toml --all-targets -- -D warnings
 npm run build:wasm        # wasm-pack web target -> helper/wasm/pkg/, then
@@ -35,8 +38,10 @@ and embeds the result in `main.js`; Community releases contain only `main.js`,
   cancellation, and response validation; `wasm-engine.ts` initializes the
   bundled WASM module and owns per-preview browser workers; `wasm-worker.ts`
   owns compiler sessions and the asynchronous vault/font input protocol.
-- `helper/src/lib.rs` is the serde-only protocol DTO crate shared with WASM; it
-  owns no compiler backend.
+- `helper/wasm/src/protocol.rs` holds the serde-only wire types the plugin and
+  the compiler agree on. It was a separate `typstian-core` crate while a native
+  helper existed; the bundled WASM compiler is the only consumer now, so it is a
+  module and the repository has exactly one Cargo lockfile.
 - `helper/wasm/` provides the only Rust compiler implementation, using
   `wasm-bindgen` and exact Typst 0.15.1 crates for compile/jump/forward.
 - Each WASM session retains the compiled document per revision so a

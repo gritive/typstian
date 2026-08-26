@@ -2568,13 +2568,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "typstian-core"
-version = "0.0.1"
-dependencies = [
- "serde",
-]
-
-[[package]]
 name = "typstian-wasm"
 version = "0.0.1"
 dependencies = [
@@ -2588,7 +2581,6 @@ dependencies = [
  "typst-kit",
  "typst-layout",
  "typst-pdf",
- "typstian-core",
  "wasm-bindgen",
 ]
 

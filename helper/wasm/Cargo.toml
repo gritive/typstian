@@ -24,7 +24,6 @@ typst-ide = "=0.15.1"
 typst-kit = { version = "=0.15.1", default-features = false }
 typst-layout = "=0.15.1"
 typst-pdf = "=0.15.1"
-typstian-core = { path = ".." }
 wasm-bindgen = "0.2"
 
 # The compiled module ships base64-encoded inside main.js, so the release build

@@ -1,5 +1,5 @@
 use base64::Engine;
-use typstian_core::{
+use typstian_wasm::protocol::{
     ClickRequest, ClickResponse, ForwardRequest, ForwardResponse, PageDimensions, RenderedPosition,
 };
 use typstian_wasm::{Clock, CompileRequest, FileInput, Session};
@@ -42,7 +42,7 @@ fn first_position(
     revision: u64,
     source: &str,
     byte_offset: usize,
-) -> Option<typstian_core::RenderedPosition> {
+) -> Option<RenderedPosition> {
     match session.forward(ForwardRequest {
         revision,
         source: source.into(),

@@ -18,11 +18,15 @@ use typst_ide::{IdeWorld, Jump, jump_from_click, jump_from_cursor};
 use typst_kit::fonts::{FontSource, FontStore};
 use typst_layout::PagedDocument;
 use typst_pdf::PdfOptions;
-use typstian_core::{
+use wasm_bindgen::prelude::*;
+
+/// The wire types the plugin and the compiler agree on.
+pub mod protocol;
+
+use protocol::{
     ClickRequest, ClickResponse, Diagnostic, ForwardRequest, ForwardResponse, PageDimensions,
     RenderedPosition,
 };
-use wasm_bindgen::prelude::*;
 
 /// New Computer Modern Math, Typst's default math face, vendored from
 /// typst-assets 0.15.1 under the GUST Font License. Bundling only this face
