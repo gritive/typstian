@@ -6,10 +6,11 @@ use base64::Engine;
 use serde::{Deserialize, Serialize};
 use time::{OffsetDateTime, UtcOffset};
 use typst::Library;
-use typst::diag::{FileError, FileResult, Severity, SourceDiagnostic};
+use typst::diag::{FileError, FileResult, PackageError, Severity, SourceDiagnostic};
 use typst::foundations::{Bytes, Datetime, Duration};
 use typst::introspection::PagedPosition;
 use typst::layout::{Abs, Point};
+use typst::syntax::package::PackageSpec;
 use typst::syntax::{FileId, RootedPath, Source, VirtualPath, VirtualRoot};
 use typst::text::{Font, FontBook, FontInfo};
 use typst::utils::LazyHash;
@@ -33,7 +34,7 @@ use protocol::{
 /// keeps `main.js` far smaller than embedding the full typst-assets font set.
 const EMBEDDED_MATH_FONT: &[u8] = include_bytes!("../assets/NewCMMath-Book.otf");
 
-const PROTOCOL_VERSION: u32 = 2;
+const PROTOCOL_VERSION: u32 = 3;
 const TYPST_VERSION: &str = "0.15.1";
 const MAX_VAULT_FILE_BYTES: usize = 50 * 1024 * 1024;
 const MAX_TOTAL_INPUT_BYTES: usize = 70 * 1024 * 1024;
@@ -93,6 +94,11 @@ pub struct CompileRequest {
     pub revision: u64,
     pub clock: Clock,
     pub files: Vec<FileInput>,
+    /// Files of already-installed local packages, keyed
+    /// `{namespace}/{name}/{version}/{path}`. The browser compiler streams these
+    /// from the host instead; this field is the in-process equivalent.
+    #[serde(default)]
+    pub packages: Vec<FileInput>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -111,6 +117,12 @@ pub struct CompileResult {
 }
 
 type Loader = Box<dyn Fn(&str) -> FileResult<Bytes> + Send + Sync>;
+/// Reads one file of an already-installed local package, keyed
+/// `{namespace}/{name}/{version}/{path}`. Package files live on the host outside
+/// the vault, so they travel on a channel of their own: asking the project
+/// loader for them would let a package spec address a vault file that happens to
+/// share the key, and vice versa.
+type PackageLoader = Box<dyn Fn(&str) -> FileResult<Bytes> + Send + Sync>;
 type FontLoader = Arc<dyn Fn(&str) -> Option<Bytes> + Send + Sync>;
 
 #[derive(Clone)]
@@ -149,6 +161,7 @@ struct InMemoryWorld {
     library: LazyHash<Library>,
     fonts: FontStore,
     loader: Loader,
+    package_loader: PackageLoader,
     sources: RwLock<HashMap<FileId, Source>>,
     inputs: Mutex<InputCache>,
 }
@@ -164,6 +177,7 @@ impl InMemoryWorld {
         entry: &str,
         clock: Clock,
         loader: Loader,
+        package_loader: PackageLoader,
         registered_fonts: &[RegisteredFont],
         font_loader: FontLoader,
     ) -> Result<Self, String> {
@@ -196,12 +210,16 @@ impl InMemoryWorld {
             library: LazyHash::new(Library::builder().build()),
             fonts,
             loader,
+            package_loader,
             sources: RwLock::new(HashMap::new()),
             inputs: Mutex::new(InputCache::default()),
         })
     }
 
-    fn path(id: FileId) -> FileResult<String> {
+    /// The compilation-root-relative path of a project file. Package files have
+    /// no such path, so every caller that speaks in vault terms — inverse search
+    /// and the dependency list the host watches — drops them here.
+    fn project_path(id: FileId) -> FileResult<String> {
         if !matches!(id.root(), VirtualRoot::Project) {
             return Err(FileError::AccessDenied);
         }
@@ -211,7 +229,7 @@ impl InMemoryWorld {
 
     fn relative_source_path(&self, id: FileId) -> Option<String> {
         (id.vpath().extension() == Some("typ"))
-            .then(|| Self::path(id).ok())
+            .then(|| Self::project_path(id).ok())
             .flatten()
     }
 
@@ -222,24 +240,61 @@ impl InMemoryWorld {
             .unwrap()
             .files
             .keys()
-            .filter_map(|id| Self::path(*id).ok())
+            .filter_map(|id| Self::project_path(*id).ok())
             .collect::<Vec<_>>();
         paths.sort();
         paths
     }
 
-    fn load(&self, id: FileId, path: &str) -> FileResult<Bytes> {
+    fn load(&self, id: FileId) -> FileResult<Bytes> {
         let mut cache = self.inputs.lock().unwrap();
         if let Some(bytes) = cache.files.get(&id) {
             return Ok(bytes.clone());
         }
-        let bytes = (self.loader)(path)?;
+        let bytes = match id.root() {
+            VirtualRoot::Project => (self.loader)(&Self::project_path(id)?)?,
+            VirtualRoot::Package(spec) => {
+                // `VirtualPath` has already normalized `.`, `..`, and
+                // backslashes away, so the key can only name a file inside the
+                // package directory the host resolves.
+                let file = id.vpath().get_without_slash();
+                if file.is_empty() {
+                    return Err(FileError::IsDirectory);
+                }
+                (self.package_loader)(&package_key(spec, file))
+                    .map_err(|error| package_error(spec, file, error))?
+            }
+        };
+        // Package bytes share the vault's per-file and per-compile budgets, so
+        // an import cannot widen how many host bytes one document may read.
         let (total, _) = validate_input_bounds(bytes.len(), cache.bytes, cache.files.len())
             .map_err(|message| FileError::Other(Some(message.into())))?;
         cache.bytes = total;
         cache.files.insert(id, bytes.clone());
         Ok(bytes)
     }
+}
+
+fn package_key(spec: &PackageSpec, file: &str) -> String {
+    format!("{}/{}/{}/{}", spec.namespace, spec.name, spec.version, file)
+}
+
+/// Typst reads a package's `typst.toml` before any of its sources, so a failure
+/// there means the package directory itself is absent. That is the case worth
+/// naming: Typstian resolves packages only from files the user already has on
+/// disk and never fetches one, so "file not found" would send the reader looking
+/// for the wrong problem.
+fn package_error(spec: &PackageSpec, file: &str, error: FileError) -> FileError {
+    if file != "typst.toml" {
+        return error;
+    }
+    FileError::Package(PackageError::Other(Some(
+        format!(
+            "{spec} is not installed locally, and Typstian never downloads packages; \
+             install it with the Typst CLI first"
+        )
+        .into(),
+    )))
 }
 
 fn validate_input_bounds(
@@ -287,11 +342,10 @@ impl World for InMemoryWorld {
         if let Some(source) = self.sources.read().unwrap().get(&id) {
             return Ok(source.clone());
         }
-        let path = Self::path(id)?;
-        if !path.ends_with(".typ") {
-            return Err(FileError::NotFound(path.into()));
+        if id.vpath().extension() != Some("typ") {
+            return Err(FileError::NotSource);
         }
-        let bytes = self.load(id, &path)?;
+        let bytes = self.load(id)?;
         let text = std::str::from_utf8(&bytes)
             .map_err(|error| FileError::Other(Some(error.to_string().into())))?;
         let source = Source::new(id, text.into());
@@ -300,8 +354,7 @@ impl World for InMemoryWorld {
     }
 
     fn file(&self, id: FileId) -> FileResult<Bytes> {
-        let path = Self::path(id)?;
-        self.load(id, &path)
+        self.load(id)
     }
 
     fn font(&self, index: usize) -> Option<Font> {
@@ -335,6 +388,20 @@ fn normalize_path(path: &str) -> Result<String, String> {
         return Err(format!("invalid vault-relative path: {path}"));
     }
     Ok(normalized.join("/"))
+}
+
+fn decode_inputs(inputs: Vec<FileInput>) -> Result<HashMap<String, Bytes>, String> {
+    let mut decoded = HashMap::new();
+    for file in inputs {
+        let path = normalize_path(&file.path)?;
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(file.contents_base64)
+            .map_err(|error| format!("invalid base64 for {path}: {error}"))?;
+        if decoded.insert(path.clone(), Bytes::new(bytes)).is_some() {
+            return Err(format!("duplicate file: {path}"));
+        }
+    }
+    Ok(decoded)
 }
 
 fn map_diagnostic(world: &InMemoryWorld, diagnostic: SourceDiagnostic) -> Diagnostic {
@@ -446,16 +513,8 @@ impl Session {
     }
 
     pub fn compile(&mut self, request: CompileRequest) -> Result<CompileResult, String> {
-        let mut files = HashMap::new();
-        for file in request.files {
-            let path = normalize_path(&file.path)?;
-            let bytes = base64::engine::general_purpose::STANDARD
-                .decode(file.contents_base64)
-                .map_err(|error| format!("invalid base64 for {path}: {error}"))?;
-            if files.insert(path.clone(), Bytes::new(bytes)).is_some() {
-                return Err(format!("duplicate file: {path}"));
-            }
-        }
+        let files = decode_inputs(request.files)?;
+        let packages = decode_inputs(request.packages)?;
         let mut result = self.compile_with_loader(
             request.entry,
             request.revision,
@@ -465,6 +524,12 @@ impl Session {
                     .get(path)
                     .cloned()
                     .ok_or_else(|| FileError::NotFound(path.into()))
+            }),
+            Box::new(move |key| {
+                packages
+                    .get(key)
+                    .cloned()
+                    .ok_or_else(|| FileError::NotFound(key.into()))
             }),
             Arc::new(|_| None),
         )?;
@@ -480,6 +545,7 @@ impl Session {
         revision: u64,
         clock: Clock,
         loader: Loader,
+        package_loader: PackageLoader,
         font_loader: FontLoader,
     ) -> Result<CompileResult, String> {
         let registered_fonts = self
@@ -488,7 +554,14 @@ impl Session {
             .map_err(|_| "system font catalog lock poisoned".to_string())?
             .fonts
             .clone();
-        let world = InMemoryWorld::new(&entry, clock, loader, &registered_fonts, font_loader)?;
+        let world = InMemoryWorld::new(
+            &entry,
+            clock,
+            loader,
+            package_loader,
+            &registered_fonts,
+            font_loader,
+        )?;
         let result = typst::compile::<PagedDocument>(&world);
         let mut diagnostics = result
             .warnings
@@ -652,6 +725,28 @@ struct WasmCompileRequest {
     clock: Clock,
 }
 
+/// Wraps a host callback that answers with the bytes of one input file, or with
+/// null when it has none. The size check mirrors the world's own bound so an
+/// oversized answer never reaches the input cache.
+#[cfg(target_arch = "wasm32")]
+fn js_loader(callback: js_sys::Function, name: &'static str) -> Loader {
+    Box::new(move |path| {
+        let value = callback
+            .call1(&JsValue::NULL, &JsValue::from_str(path))
+            .map_err(|_| FileError::Other(Some(format!("{name} failed for {path}").into())))?;
+        if value.is_null() || value.is_undefined() {
+            return Err(FileError::NotFound(path.into()));
+        }
+        let array = js_sys::Uint8Array::new(&value);
+        if array.length() as usize > MAX_VAULT_FILE_BYTES {
+            return Err(FileError::Other(Some(
+                format!("input file exceeds {MAX_VAULT_FILE_BYTES} byte limit").into(),
+            )));
+        }
+        Ok(Bytes::new(array.to_vec()))
+    })
+}
+
 #[wasm_bindgen]
 pub struct TypstianWasmSession {
     inner: Session,
@@ -686,11 +781,11 @@ impl TypstianWasmSession {
         &mut self,
         request_json: &str,
         read_file: &js_sys::Function,
+        read_package: &js_sys::Function,
         read_font: &js_sys::Function,
     ) -> Result<JsValue, JsValue> {
         let request: WasmCompileRequest = serde_json::from_str(request_json)
             .map_err(|error| JsValue::from_str(&format!("invalid compile request: {error}")))?;
-        let read_file = read_file.clone();
         let read_font = read_font.clone();
         let result = self
             .inner
@@ -698,23 +793,8 @@ impl TypstianWasmSession {
                 request.entry,
                 request.revision,
                 request.clock,
-                Box::new(move |path| {
-                    let value = read_file
-                        .call1(&JsValue::NULL, &JsValue::from_str(path))
-                        .map_err(|_| {
-                            FileError::Other(Some(format!("readFile failed for {path}").into()))
-                        })?;
-                    if value.is_null() || value.is_undefined() {
-                        return Err(FileError::NotFound(path.into()));
-                    }
-                    let array = js_sys::Uint8Array::new(&value);
-                    if array.length() as usize > MAX_VAULT_FILE_BYTES {
-                        return Err(FileError::Other(Some(
-                            format!("vault file exceeds {MAX_VAULT_FILE_BYTES} byte limit").into(),
-                        )));
-                    }
-                    Ok(Bytes::new(array.to_vec()))
-                }),
+                js_loader(read_file.clone(), "readFile"),
+                js_loader(read_package.clone(), "readPackage"),
                 Arc::new(move |path| {
                     let value = read_font
                         .call1(&JsValue::NULL, &JsValue::from_str(path))
@@ -837,6 +917,7 @@ mod font_tests {
                         .then(|| source.clone())
                         .ok_or_else(|| FileError::NotFound(path.into()))
                 }),
+                Box::new(|key| Err(FileError::NotFound(key.into()))),
                 Arc::new(move |path| {
                     (path == "system.ttf").then(|| {
                         loads_for_loader.fetch_add(1, Ordering::SeqCst);

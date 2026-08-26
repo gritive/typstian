@@ -17,6 +17,22 @@ fn fixture(group: &str, path: &str) -> FileInput {
     file_input(path, &bytes)
 }
 
+/// A file of the locally installed package fixture, keyed the way the compiler
+/// asks the host for it: `{namespace}/{name}/{version}/{path}`.
+fn package_fixture(key: &str) -> FileInput {
+    let bytes = std::fs::read(format!("../tests/fixtures/packages/local/{key}")).unwrap();
+    file_input(key, &bytes)
+}
+
+fn error_messages(result: &typstian_wasm::CompileResult) -> Vec<&str> {
+    result
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.severity == "error")
+        .map(|diagnostic| diagnostic.message.as_str())
+        .collect()
+}
+
 fn file_input(path: &str, bytes: &[u8]) -> FileInput {
     FileInput {
         path: path.into(),
@@ -34,6 +50,7 @@ fn project_request(revision: u64) -> CompileRequest {
             fixture("project", "section.typ"),
             fixture("project", "assets/mark.svg"),
         ],
+        packages: Vec::new(),
     }
 }
 
@@ -169,6 +186,7 @@ fn maps_compile_error_to_exact_source_location() {
             entry: "invalid.typ".into(),
             revision: 11,
             files: vec![fixture("diagnostics", "invalid.typ")],
+            packages: Vec::new(),
         })
         .expect("compile diagnostics are a protocol result");
 
@@ -190,6 +208,7 @@ fn maps_diagnostic_column_as_utf16_for_javascript_clients() {
             entry: "astral.typ".into(),
             revision: 14,
             files: vec![fixture("diagnostics", "astral.typ")],
+            packages: Vec::new(),
         })
         .expect("compile diagnostics are a protocol result");
 
@@ -207,6 +226,7 @@ fn rejects_image_outside_virtual_root() {
             entry: "image.typ".into(),
             revision: 4,
             files: vec![fixture("escape/vault", "image.typ")],
+            packages: Vec::new(),
         })
         .expect("missing external image is a compile result");
 
@@ -220,7 +240,7 @@ fn rejects_image_outside_virtual_root() {
 }
 
 #[test]
-fn rejects_package_import_without_network_resolution() {
+fn reports_an_uninstalled_package_as_never_downloaded() {
     let mut session = Session::new();
     let result = session
         .compile(CompileRequest {
@@ -228,16 +248,42 @@ fn rejects_package_import_without_network_resolution() {
             entry: "package.typ".into(),
             revision: 5,
             files: vec![fixture("escape/vault", "package.typ")],
+            packages: Vec::new(),
         })
         .expect("missing package is a compile result");
 
     assert!(result.pdf_base64.is_empty());
+    let messages = error_messages(&result);
     assert!(
-        result
-            .diagnostics
-            .iter()
-            .any(|diagnostic| diagnostic.severity == "error")
+        messages.iter().any(|message| {
+            message.contains("@preview/definitely-not-installed:0.1.0")
+                && message.contains("never downloads")
+        }),
+        "a missing package must name itself and say nothing was downloaded, got {messages:?}"
     );
+}
+
+#[test]
+fn resolves_a_package_import_from_locally_installed_files() {
+    let mut session = Session::new();
+    let result = session
+        .compile(CompileRequest {
+            clock: CLOCK,
+            entry: "main.typ".into(),
+            revision: 21,
+            files: vec![fixture("packages/project", "main.typ")],
+            packages: vec![
+                package_fixture("preview/greet/0.1.0/typst.toml"),
+                package_fixture("preview/greet/0.1.0/lib.typ"),
+            ],
+        })
+        .expect("fixture compiles");
+
+    assert_eq!(error_messages(&result), Vec::<&str>::new());
+    assert!(!result.pdf_base64.is_empty());
+    // Package files live outside the vault, so they must not reach the
+    // dependency index that watches vault files for recompiles.
+    assert_eq!(result.dependencies, vec!["main.typ".to_string()]);
 }
 
 #[test]
@@ -257,6 +303,7 @@ fn click_uses_retained_snapshot_after_source_input_changes() {
             entry: "main.typ".into(),
             revision: 17,
             files: vec![main, mutable_input.clone(), asset],
+            packages: Vec::new(),
         })
         .expect("fixture compiles");
     let position = first_position(&session, 17, "section.typ", expected)
@@ -283,6 +330,7 @@ fn resolves_the_current_date_from_the_host_clock() {
             entry: "main.typ".into(),
             revision: 1,
             files: vec![file_input("main.typ", source.as_bytes())],
+            packages: Vec::new(),
         })
         .expect("compile succeeds");
 

@@ -43,7 +43,7 @@ describe("release contract", () => {
       "utf8"
     );
     expect(glueTypes).toContain(
-      "compile(request_json: string, read_file: WasmInputReader, read_font: WasmInputReader): unknown;"
+      "compile(request_json: string, read_file: WasmInputReader, read_package: WasmInputReader, read_font: WasmInputReader): unknown;"
     );
     expect(glueTypes).not.toMatch(/\bFunction\b/);
     expect(glueTypes).not.toMatch(/:\s*any\b/);
@@ -135,6 +135,10 @@ describe("release contract", () => {
     // The PDF export is the plugin's only write into the user's vault, so the
     // Community-directory description has to state where the file lands and
     // that nothing is overwritten.
+    // AGENTS.md is CLAUDE.md for other tools. It has drifted twice by being
+    // edited one file at a time, and nothing but this noticed.
+    expect(fs.readFileSync(path.join(root, "AGENTS.md"), "utf8"))
+      .toBe(fs.readFileSync(path.join(root, "CLAUDE.md"), "utf8"));
     expect(readme).toContain("Typstian: Save the compiled PDF to the vault");
     expect(readme).toContain("An existing file is never overwritten");
     expect(workflow).not.toContain("--draft");

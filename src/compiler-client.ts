@@ -1,4 +1,4 @@
-const PROTOCOL_VERSION = 2;
+const PROTOCOL_VERSION = 3;
 const DEFAULT_TIMEOUT_MS = 15_000;
 const DEFAULT_INITIALIZATION_TIMEOUT_MS = 120_000;
 const DEFAULT_MAX_OUTPUT_BYTES = 70 * 1024 * 1024;
@@ -63,7 +63,7 @@ export interface TypstianCompilerClientOptions {
 }
 
 export interface CompilerEnvironment {
-  protocolVersion: 2;
+  protocolVersion: 3;
   typstVersion: string;
 }
 

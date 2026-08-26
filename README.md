@@ -92,14 +92,21 @@ Typstian makes no network requests, sends no telemetry, compiles nothing
 remotely, and never launches or downloads an executable. The compiler is already
 inside `main.js`.
 
-It reads two things outside your vault's Obsidian API: the files your document
-references, and your installed fonts. That is why it uses Node's `fs` rather
-than the vault API — a Typst compile resolves `#import` and `#image` against the
-compilation root and needs the bytes of every file reached that way, plus system
-fonts that live outside the vault entirely. Reads are confined to the
-compilation root and the standard OS font directories; absolute paths,
-traversal, and symlink escapes are rejected, and the plugin never writes to
-disk. Each compile runs in its own sandboxed worker with a 15-second deadline.
+It reads three things outside your vault's Obsidian API: the files your document
+references, your installed fonts, and the Typst packages already on your
+machine. That is why it uses Node's `fs` rather than the vault API — a Typst
+compile resolves `#import` and `#image` against the compilation root and needs
+the bytes of every file reached that way, plus system fonts and package files
+that live outside the vault entirely. Reads are confined to the compilation
+root, the standard OS font directories, and Typst's own package directories;
+absolute paths, traversal, and symlink escapes are rejected, and the plugin
+never writes to disk. Each compile runs in its own sandboxed worker with a
+15-second deadline.
+
+An `#import "@preview/…"` resolves only against packages you have already
+downloaded — with the Typst CLI, or by placing them in Typst's package
+directory yourself. Typstian never downloads one, and says so by name when a
+package is missing.
 
 The preview loads PDF.js with `isEvalSupported: false`, so the one path that
 would run generated code over document content stays off.

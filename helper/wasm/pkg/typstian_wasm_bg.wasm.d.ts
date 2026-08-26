@@ -1,7 +1,7 @@
 /* tslint:disable */
 export const memory: WebAssembly.Memory;
 export const __wbg_typstianwasmsession_free: (a: number, b: number) => void;
-export const typstianwasmsession_compile: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
+export const typstianwasmsession_compile: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
 export const typstianwasmsession_environment: (a: number, b: number) => void;
 export const typstianwasmsession_forward: (a: number, b: number, c: number, d: number) => void;
 export const typstianwasmsession_jump: (a: number, b: number, c: number, d: number) => void;

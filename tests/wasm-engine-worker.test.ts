@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const host = vi.hoisted(() => ({
   readVault: vi.fn<(path: string) => Promise<Uint8Array | undefined>>(),
+  readPackage: vi.fn<(key: string) => Promise<Uint8Array | undefined>>(),
   readFont: vi.fn<(path: string, signal?: AbortSignal) => Promise<Uint8Array | undefined>>(),
   registerFonts: vi.fn(),
 }));
@@ -12,6 +13,11 @@ const host = vi.hoisted(() => ({
 vi.mock("../src/wasm-vault-reader", () => ({
   rootedReadFile: () => () => undefined,
   rootedReadFileAsync: () => host.readVault,
+}));
+
+vi.mock("../src/typst-packages", () => ({
+  createLocalPackageReader: () => ({ readSync: () => undefined, read: host.readPackage }),
+  typstPackageDirectories: () => [],
 }));
 
 vi.mock("../src/system-fonts", () => ({
@@ -26,6 +32,7 @@ type WorkerListener = (event: { data?: unknown; message?: string }) => void;
 class FakeBrowserWorker {
   static instances: FakeBrowserWorker[] = [];
   static vaultPaths: string[] = [];
+  static packagePaths: string[] = [];
   static fontPaths: string[] = [];
 
   readonly messages: Array<Record<string, unknown>> = [];
@@ -60,6 +67,7 @@ class FakeBrowserWorker {
           type: "need-inputs",
           batchId: 1,
           vaultPaths: FakeBrowserWorker.vaultPaths,
+          packagePaths: FakeBrowserWorker.packagePaths,
           fontPaths: FakeBrowserWorker.fontPaths,
         },
       }));
@@ -110,8 +118,10 @@ describe("browser worker WASM engine", () => {
     fs.writeFileSync(wasmPath, "wasm");
     FakeBrowserWorker.instances = [];
     FakeBrowserWorker.vaultPaths = [];
+    FakeBrowserWorker.packagePaths = [];
     FakeBrowserWorker.fontPaths = [];
     host.readVault.mockReset();
+    host.readPackage.mockReset();
     host.readFont.mockReset();
     host.registerFonts.mockReset();
     host.registerFonts.mockResolvedValue({
@@ -162,6 +172,49 @@ describe("browser worker WASM engine", () => {
     engine.dispose();
   });
 
+  it("streams package files on a channel of their own", async () => {
+    FakeBrowserWorker.vaultPaths = ["main.typ"];
+    FakeBrowserWorker.packagePaths = ["preview/greet/0.1.0/typst.toml"];
+    host.readVault.mockResolvedValue(Uint8Array.from([1]));
+    host.readPackage.mockResolvedValue(Uint8Array.from([2, 3]));
+    const engine = await createWasmEngine({
+      rootPath: temporary,
+      wasmPath,
+      maxOutputBytes: 70 * 1024 * 1024,
+    });
+
+    await expect(engine.compile({ revision: 1, entryPath: "main.typ" })).resolves.toBe(
+      "compiled",
+    );
+
+    expect(host.readPackage).toHaveBeenCalledWith("preview/greet/0.1.0/typst.toml");
+    expect(host.readVault).not.toHaveBeenCalledWith("preview/greet/0.1.0/typst.toml");
+    const inputMessages = FakeBrowserWorker.instances[0]!.messages
+      .filter((message) => message.type === "inputs");
+    expect(inputMessages.slice(0, 2).map((message) => message.files)).toMatchObject([
+      [{ kind: "vault", path: "main.typ" }],
+      [{ kind: "package", path: "preview/greet/0.1.0/typst.toml" }],
+    ]);
+    engine.dispose();
+  });
+
+  it("charges package bytes to the same 70 MiB compile budget as vault files", async () => {
+    FakeBrowserWorker.vaultPaths = ["main.typ"];
+    FakeBrowserWorker.packagePaths = ["preview/greet/0.1.0/typst.toml"];
+    host.readVault.mockResolvedValue(new Uint8Array(35 * 1024 * 1024));
+    host.readPackage.mockResolvedValue(sizedBytes(40 * 1024 * 1024));
+    const engine = await createWasmEngine({
+      rootPath: temporary,
+      wasmPath,
+      maxOutputBytes: 70 * 1024 * 1024,
+    });
+
+    await expect(engine.compile({ revision: 1, entryPath: "main.typ" })).rejects.toThrow(
+      "Typstian compiler inputs exceeded the 70 MiB limit.",
+    );
+    engine.dispose();
+  });
+
 it("prefers overlay bytes to disk reads", async () => {
     FakeBrowserWorker.vaultPaths = ["main.typ"];
     const overlayBytes = Uint8Array.from([1, 2, 3]);
@@ -209,6 +262,7 @@ it("releases the compile input context when the request settles", async () => {
         type: "need-inputs",
         batchId: 99,
         vaultPaths: ["main.typ"],
+        packagePaths: [],
         fontPaths: [],
       },
     });

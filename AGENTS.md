@@ -124,6 +124,16 @@ and embeds the result in `main.js`; Community releases contain only `main.js`,
   `no font could be found` — Typst treats that as a compile error, not a
   fallback. Text faces come from bounded standard OS directories. No additional
   font paths.
+- **`@preview` packages resolve from local files only.** `src/typst-packages.ts`
+  maps a `{namespace}/{name}/{version}/{path}` key onto Typst's own data and
+  cache package directories and reads it through the same rooted reader the
+  vault uses, so a package file cannot escape its package directory. Package
+  bytes spend the *same* 70 MiB per-compile budget as vault files, on both
+  sides. The compiler asks for them on a third input channel (`readPackage`),
+  never through the vault loader. A package that is not installed fails with a
+  diagnostic naming it and saying nothing was downloaded — Typst reads a
+  package's `typst.toml` first, which is how `helper/wasm/src/lib.rs` knows the
+  directory is absent rather than one file inside it. Never add a download path.
 - **Renderer code must not touch main-window globals.** A preview can live in a
   popout window, so timers, `getComputedStyle`, `getSelection`, and
   `activeElement` go through the element's own `win`/`doc`, and elements are

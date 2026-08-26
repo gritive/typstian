@@ -1,4 +1,4 @@
-/** Resolves one vault-relative input path, or nothing when it is absent. */
+/** Resolves one input key, or nothing when it is absent. */
 export type WasmInputReader = (path: string) => Uint8Array | undefined;
 
 /* tslint:disable */
@@ -6,7 +6,7 @@ export type WasmInputReader = (path: string) => Uint8Array | undefined;
 export class TypstianWasmSession {
     free(): void;
     [Symbol.dispose](): void;
-    compile(request_json: string, read_file: WasmInputReader, read_font: WasmInputReader): unknown;
+    compile(request_json: string, read_file: WasmInputReader, read_package: WasmInputReader, read_font: WasmInputReader): unknown;
     environment(): string;
     forward(request_json: string): string;
     jump(request_json: string): string;
@@ -19,7 +19,7 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly __wbg_typstianwasmsession_free: (a: number, b: number) => void;
-    readonly typstianwasmsession_compile: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
+    readonly typstianwasmsession_compile: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
     readonly typstianwasmsession_environment: (a: number, b: number) => void;
     readonly typstianwasmsession_forward: (a: number, b: number, c: number, d: number) => void;
     readonly typstianwasmsession_jump: (a: number, b: number, c: number, d: number) => void;

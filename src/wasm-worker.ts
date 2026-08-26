@@ -17,11 +17,13 @@ interface WorkerRequest {
   payload: unknown;
 }
 
+type InputKind = "vault" | "package" | "font";
+
 interface InputResponse {
   type: "inputs";
   batchId: number;
   files: Array<{
-    kind: "vault" | "font";
+    kind: InputKind;
     path: string;
     bytes: ArrayBuffer | null;
   }>;
@@ -47,6 +49,7 @@ const MAX_INPUT_PATHS = 10_000;
 const MAX_PDF_BYTES = 50 * 1024 * 1024;
 const sleep = new Map<number, (message: InputResponse) => void>();
 let previousPaths = new Set<string>();
+let previousPackagePaths = new Set<string>();
 let previousFontPaths = new Set<string>();
 let session: TypstianWasmSession | undefined;
 let batchId = 0;
@@ -200,30 +203,39 @@ async function compile(
   request: { revision: number; entryPath: string },
 ): Promise<WorkerDispatchResult> {
   const fileCache = new Map<string, Uint8Array | null>();
+  const packageCache = new Map<string, Uint8Array | null>();
   const fontCache = new Map<string, Uint8Array | null>();
   const currentPaths = new Set<string>();
+  const currentPackagePaths = new Set<string>();
   const currentFontPaths = new Set<string>();
   const missing = new Set<string>();
+  const missingPackages = new Set<string>();
   const missingFonts = new Set<string>();
-  const readFile = (path: string): Uint8Array | undefined => {
-    currentPaths.add(path);
-    if (fileCache.has(path)) return fileCache.get(path) ?? undefined;
-    missing.add(path);
+  const caches = { vault: fileCache, package: packageCache, font: fontCache };
+  const reader = (
+    seen: Set<string>,
+    cache: Map<string, Uint8Array | null>,
+    absent: Set<string>,
+  ) => (path: string): Uint8Array | undefined => {
+    seen.add(path);
+    if (cache.has(path)) return cache.get(path) ?? undefined;
+    absent.add(path);
     return undefined;
   };
-  const readFont = (path: string): Uint8Array | undefined => {
-    currentFontPaths.add(path);
-    if (fontCache.has(path)) return fontCache.get(path) ?? undefined;
-    missingFonts.add(path);
-    return undefined;
-  };
+  const readFile = reader(currentPaths, fileCache, missing);
+  const readPackage = reader(currentPackagePaths, packageCache, missingPackages);
+  const readFont = reader(currentFontPaths, fontCache, missingFonts);
 
-  if (previousPaths.size > 0 || previousFontPaths.size > 0) {
+  if (
+    previousPaths.size > 0
+    || previousPackagePaths.size > 0
+    || previousFontPaths.size > 0
+  ) {
     await requestInputs(
       Array.from(previousPaths),
+      Array.from(previousPackagePaths),
       Array.from(previousFontPaths),
-      fileCache,
-      fontCache,
+      caches,
     );
   }
 
@@ -234,27 +246,34 @@ async function compile(
 
   while (true) {
     missing.clear();
+    missingPackages.clear();
     missingFonts.clear();
     const result: unknown = activeSession.compile(
       compileRequestJson(request, clock),
       readFile,
+      readPackage,
       readFont,
     );
-    if (missing.size === 0 && missingFonts.size === 0) {
+    if (missing.size === 0 && missingPackages.size === 0 && missingFonts.size === 0) {
       previousPaths = currentPaths;
+      previousPackagePaths = currentPackagePaths;
       previousFontPaths = currentFontPaths;
       return decodeCompileResult(result);
     }
-    if (currentPaths.size + currentFontPaths.size > MAX_INPUT_PATHS) {
+    if (
+      currentPaths.size + currentPackagePaths.size + currentFontPaths.size
+        > MAX_INPUT_PATHS
+    ) {
       throw new Error("Typstian compiler requested too many inputs.");
     }
     await requestInputs(
       Array.from(missing),
+      Array.from(missingPackages),
       Array.from(missingFonts),
-      fileCache,
-      fontCache,
+      caches,
     );
     const unresolved = Array.from(missing).some((path) => !fileCache.has(path))
+      || Array.from(missingPackages).some((path) => !packageCache.has(path))
       || Array.from(missingFonts).some((path) => !fontCache.has(path));
     if (unresolved) {
       throw new Error("Typstian compiler input provider made no progress.");
@@ -264,9 +283,9 @@ async function compile(
 
 function requestInputs(
   vaultPaths: string[],
+  packagePaths: string[],
   fontPaths: string[],
-  fileCache: Map<string, Uint8Array | null>,
-  fontCache: Map<string, Uint8Array | null>,
+  caches: Record<InputKind, Map<string, Uint8Array | null>>,
 ): Promise<void> {
   const currentBatch = ++batchId;
   return new Promise((resolve, reject) => {
@@ -277,8 +296,8 @@ function requestInputs(
         return;
       }
       for (const file of message.files) {
-        const cache = file.kind === "font" ? fontCache : fileCache;
-        cache.set(
+        const cache = caches[file.kind];
+        cache?.set(
           file.path,
           file.bytes === null ? null : new Uint8Array(file.bytes),
         );
@@ -292,6 +311,7 @@ function requestInputs(
       type: "need-inputs",
       batchId: currentBatch,
       vaultPaths,
+      packagePaths,
       fontPaths,
     });
   });

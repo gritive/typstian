@@ -66,7 +66,7 @@ it("loads embedded Brotli WASM without a release-side asset", { timeout: 15_000 
         for (const response of responses) {
           expect(JSON.parse(response)).toEqual({
             type: "environment",
-            protocolVersion: 2,
+            protocolVersion: 3,
             typstVersion: "0.15.1",
           });
         }
@@ -162,7 +162,7 @@ it("embeds a Korean glyph", async () => {
     });
     try {
       const environment = await client.checkEnvironment();
-      expect(environment).toEqual({ protocolVersion: 2, typstVersion: "0.15.1" });
+      expect(environment).toEqual({ protocolVersion: 3, typstVersion: "0.15.1" });
 
       const result = await client.compile({ revision: 1, entryPath: "main.typ" });
       expect(result.ok).toBe(true);

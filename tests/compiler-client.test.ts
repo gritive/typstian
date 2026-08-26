@@ -103,9 +103,9 @@ describe("TypstianCompilerClient", () => {
       maxOutputBytes: 70 * 1024 * 1024,
     });
 
-    engines[0]!.respond({ type: "environment", protocolVersion: 2, typstVersion: "0.15.1" });
+    engines[0]!.respond({ type: "environment", protocolVersion: 3, typstVersion: "0.15.1" });
 
-    await expect(result).resolves.toEqual({ protocolVersion: 2, typstVersion: "0.15.1" });
+    await expect(result).resolves.toEqual({ protocolVersion: 3, typstVersion: "0.15.1" });
     expect(engineFactory).toHaveBeenCalledOnce();
     client.close();
   });
@@ -322,8 +322,8 @@ it("passes the pinned overlay snapshot to the engine compile request", async () 
 
     const environment = client.checkEnvironment();
     await vi.waitFor(() => expect(engines[1]?.calls).toHaveLength(1));
-    engines[1]!.respond({ type: "environment", protocolVersion: 2, typstVersion: "0.15.1" });
-    await expect(environment).resolves.toEqual({ protocolVersion: 2, typstVersion: "0.15.1" });
+    engines[1]!.respond({ type: "environment", protocolVersion: 3, typstVersion: "0.15.1" });
+    await expect(environment).resolves.toEqual({ protocolVersion: 3, typstVersion: "0.15.1" });
     client.close();
   });
 
@@ -370,7 +370,7 @@ it("passes the pinned overlay snapshot to the engine compile request", async () 
     await vi.waitFor(() => expect(outputHarness.engines[0]?.calls).toHaveLength(1));
     outputHarness.engines[0]!.respond({
       type: "environment",
-      protocolVersion: 2,
+      protocolVersion: 3,
       typstVersion: "0.15.1",
     });
     await expect(environment).rejects.toMatchObject({ code: "output-limit" });
@@ -441,7 +441,7 @@ it("passes the pinned overlay snapshot to the engine compile request", async () 
     );
     engines[0]!.respond({
       type: "environment",
-      protocolVersion: 2,
+      protocolVersion: 3,
       typstVersion: "0.15.1",
     });
     await expect(environment).resolves.toMatchObject({ typstVersion: "0.15.1" });

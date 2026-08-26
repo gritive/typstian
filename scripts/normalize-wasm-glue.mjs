@@ -12,15 +12,15 @@ const BLANKET_ESLINT_DISABLE = /^\/\* eslint-disable \*\/\n/gm;
 
 // wasm-bindgen cannot describe `&js_sys::Function` or a returned `JsValue`, so
 // it emits `Function` and `any` — the two shapes every linter reading the
-// generated declarations reports. The vault and font readers have one exact
-// signature, and `compile` returns a value the client validates, so the
+// generated declarations reports. The vault, package, and font readers share one
+// exact signature, and `compile` returns a value the client validates, so the
 // declaration is narrowed to what the worker actually passes and receives.
 const GENERATED_COMPILE_SIGNATURE =
-  "    compile(request_json: string, read_file: Function, read_font: Function): any;\n";
+  "    compile(request_json: string, read_file: Function, read_package: Function, read_font: Function): any;\n";
 const NARROWED_COMPILE_SIGNATURE =
-  "    compile(request_json: string, read_file: WasmInputReader, read_font: WasmInputReader): unknown;\n";
+  "    compile(request_json: string, read_file: WasmInputReader, read_package: WasmInputReader, read_font: WasmInputReader): unknown;\n";
 const INPUT_READER_DECLARATION =
-  "/** Resolves one vault-relative input path, or nothing when it is absent. */\n"
+  "/** Resolves one input key, or nothing when it is absent. */\n"
   + "export type WasmInputReader = (path: string) => Uint8Array | undefined;\n\n";
 
 const packageDir = path.resolve(

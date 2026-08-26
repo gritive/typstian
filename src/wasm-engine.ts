@@ -15,6 +15,11 @@ import {
   systemFontDirectories,
   type RegisteredSystemFonts,
 } from "./system-fonts";
+import {
+  createLocalPackageReader,
+  typstPackageDirectories,
+  type LocalPackages,
+} from "./typst-packages";
 import { rootedReadFile, rootedReadFileAsync } from "./wasm-vault-reader";
 import { compileRequestJson, hostClock } from "./compile-request";
 
@@ -67,6 +72,7 @@ function transferableBuffer(bytes: Uint8Array): ArrayBuffer {
 
 class InlineWasmEngine implements WasmEngine {
   private readonly readFile: ReturnType<typeof rootedReadFile>;
+  private readonly packages: LocalPackages;
   private readonly session: Promise<TypstianWasmSession | undefined>;
   private readonly lifecycle = new AbortController();
   private readFont: RegisteredSystemFonts["readSync"] = () => undefined;
@@ -75,6 +81,7 @@ class InlineWasmEngine implements WasmEngine {
 
   constructor(rootPath: string, wasmPath: string) {
     this.readFile = rootedReadFile(rootPath);
+    this.packages = createLocalPackageReader(typstPackageDirectories());
     this.session = initializeWasm(wasmPath).then(async () => {
       if (this.disposed) return undefined;
       const session = new TypstianWasmSession();
@@ -114,6 +121,7 @@ class InlineWasmEngine implements WasmEngine {
     return (await this.requireSession()).compile(
       compileRequestJson(request, hostClock()),
       readFile,
+      (key: string) => this.packages.readSync(key),
       this.readFont,
     );
   }
@@ -172,6 +180,7 @@ class WorkerWasmEngine implements WasmEngine {
   private readonly worker: Worker;
   private readonly workerUrl: string;
   private readonly readFile: ReturnType<typeof rootedReadFileAsync>;
+  private readonly packages: LocalPackages;
   private readonly pending = new Map<number, PendingWorkerRequest>();
   private readonly lifecycle = new AbortController();
   private readonly initialization: Promise<void>;
@@ -187,6 +196,7 @@ class WorkerWasmEngine implements WasmEngine {
     maxOutputBytes: number,
   ) {
     this.readFile = rootedReadFileAsync(rootPath);
+    this.packages = createLocalPackageReader(typstPackageDirectories());
     this.workerUrl = URL.createObjectURL(new Blob([workerSource], {
       type: "text/javascript",
     }));
@@ -326,23 +336,26 @@ class WorkerWasmEngine implements WasmEngine {
     if (
       !Number.isSafeInteger(message.batchId)
       || !Array.isArray(message.vaultPaths)
+      || !Array.isArray(message.packagePaths)
       || !Array.isArray(message.fontPaths)
     ) {
       return;
     }
     const batchId = message.batchId as number;
-    const vaultPaths = message.vaultPaths.filter(
-      (path): path is string => typeof path === "string",
-    );
-    const fontPaths = message.fontPaths.filter(
-      (path): path is string => typeof path === "string",
-    );
+    const strings = (values: unknown[]): string[] =>
+      values.filter((value): value is string => typeof value === "string");
+    const vaultPaths = strings(message.vaultPaths);
+    const packagePaths = strings(message.packagePaths);
+    const fontPaths = strings(message.fontPaths);
     const context = this.compileContext;
     if (context === undefined) {
       this.postInputError(batchId, "Typstian compiler requested inputs outside a compile.");
       return;
     }
-    if (vaultPaths.length + fontPaths.length > MAX_COMPILER_INPUT_PATHS) {
+    if (
+      vaultPaths.length + packagePaths.length + fontPaths.length
+        > MAX_COMPILER_INPUT_PATHS
+    ) {
       this.postInputError(batchId, "Typstian compiler requested too many inputs.");
       return;
     }
@@ -350,6 +363,9 @@ class WorkerWasmEngine implements WasmEngine {
     try {
       for (const path of vaultPaths) {
         await this.providePath(batchId, "vault", path, context);
+      }
+      for (const path of packagePaths) {
+        await this.providePath(batchId, "package", path, context);
       }
       for (const path of fontPaths) {
         await this.providePath(batchId, "font", path, context);
@@ -372,21 +388,25 @@ class WorkerWasmEngine implements WasmEngine {
 
   private async providePath(
     batchId: number,
-    kind: "vault" | "font",
+    kind: "vault" | "package" | "font",
     path: string,
     context: CompileContext,
   ): Promise<void> {
     const bytes = kind === "vault"
       ? context.overlay?.get(path) ?? await this.readFile(path)
-      : await this.readFont(path, this.lifecycle.signal);
+      : kind === "package"
+        ? await this.packages.read(path)
+        : await this.readFont(path, this.lifecycle.signal);
     if (this.disposed) return;
-    const budgetKey = kind === "vault" ? "vaultBytes" : "fontBytes";
+    // Package files are host bytes a document pulls in, so they spend the same
+    // per-compile budget as vault files: an import cannot widen the ceiling.
+    const budgetKey = kind === "font" ? "fontBytes" : "vaultBytes";
     if (bytes !== undefined) {
       if (bytes.byteLength > context.budget[budgetKey]) {
         throw new Error(
-          kind === "vault"
-            ? "Typstian compiler inputs exceeded the 70 MiB limit."
-            : "Typstian selected fonts exceeded the 128 MiB limit.",
+          kind === "font"
+            ? "Typstian selected fonts exceeded the 128 MiB limit."
+            : "Typstian compiler inputs exceeded the 70 MiB limit.",
         );
       }
       context.budget[budgetKey] -= bytes.byteLength;

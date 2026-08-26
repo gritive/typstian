@@ -14,15 +14,16 @@ export class TypstianWasmSession {
     /**
      * @param {string} request_json
      * @param {Function} read_file
+     * @param {Function} read_package
      * @param {Function} read_font
      * @returns {any}
      */
-    compile(request_json, read_file, read_font) {
+    compile(request_json, read_file, read_package, read_font) {
         try {
             const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
             const ptr0 = passStringToWasm0(request_json, wasm.__wbindgen_export2, wasm.__wbindgen_export3);
             const len0 = WASM_VECTOR_LEN;
-            wasm.typstianwasmsession_compile(retptr, this.__wbg_ptr, ptr0, len0, addBorrowedObject(read_file), addBorrowedObject(read_font));
+            wasm.typstianwasmsession_compile(retptr, this.__wbg_ptr, ptr0, len0, addBorrowedObject(read_file), addBorrowedObject(read_package), addBorrowedObject(read_font));
             var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
             var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
             var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
@@ -32,6 +33,7 @@ export class TypstianWasmSession {
             return takeObject(r0);
         } finally {
             wasm.__wbindgen_add_to_stack_pointer(16);
+            heap[stack_pointer++] = undefined;
             heap[stack_pointer++] = undefined;
             heap[stack_pointer++] = undefined;
         }

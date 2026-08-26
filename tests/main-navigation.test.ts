@@ -188,7 +188,7 @@ describe("TypstianPlugin diagnostic fan-out", () => {
       ok: true,
       dependencies: ["a.typ"],
       diagnostics: [{ severity: "warning", message: "careful", path: "a.typ", line: 1, column: 1 }],
-    } as never);
+    });
 
     // A second project's preview must not clear the marks this editor is
     // showing for its own compile.
