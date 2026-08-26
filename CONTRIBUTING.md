@@ -48,7 +48,9 @@ build inputs rather than build output.
 Commit the regenerated files under `helper/wasm/pkg/` after `npm run build:wasm`;
 a plain `npm test` and `npm run build` consume the checked-in artifacts and do
 not need `wasm-pack`. A regenerated `pkg/` is byte-identical to what is checked
-in, so a clean `git status` afterwards is the expected result.
+in, so a clean `git status` afterwards is the expected result. That holds from
+any directory: `build:wasm` passes `--remap-path-prefix` so the checkout path
+and the Cargo registry path stay out of the module.
 
 If `npm run build:wasm` reports `wasm32-unknown-unknown target not found in
 sysroot`, another Rust installation is ahead of rustup in `PATH`. Put the

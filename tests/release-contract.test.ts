@@ -202,6 +202,11 @@ describe("release contract", () => {
     expect(wasmCargo).toContain('license = "MIT"');
     expect(wasmPackage.license).toBe("MIT");
     expect(packageJson.scripts?.["build:wasm"]).toContain("--locked");
+    // rustc records the crate paths it compiled, so without these the module —
+    // and the main.js that embeds it — differs per checkout location and no one
+    // can reproduce a published release.
+    expect(packageJson.scripts?.["build:wasm"]).toContain("--remap-path-prefix=$PWD=");
+    expect(packageJson.scripts?.["build:wasm"]).toContain(".cargo}=/cargo");
     expect(packageJson.scripts?.["licenses:generate"]).toBe(
       "node scripts/generate-third-party-notices.mjs",
     );

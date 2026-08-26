@@ -21,7 +21,8 @@ cargo test   --manifest-path helper/wasm/Cargo.toml
 cargo clippy --manifest-path helper/wasm/Cargo.toml --all-targets -- -D warnings
 npm run build:wasm        # wasm-pack web target -> helper/wasm/pkg/, then
                           # scripts/normalize-wasm-glue.mjs strips the blanket
-                          # eslint-disable the community review rejects
+                          # eslint-disable the community review rejects and
+                          # narrows the `Function`/`any` compile signature
 ```
 
 Run `npm run build:wasm` after changing `helper/wasm/`, then commit the generated
@@ -71,6 +72,11 @@ and embeds the result in `main.js`; Community releases contain only `main.js`,
   the README paragraphs answering the community review's filesystem and
   dynamic-execution findings, and the split that keeps developer instructions in
   `CONTRIBUTING.md` rather than the README.
+- **The WASM build remaps its source paths.** rustc bakes the paths of every
+  crate it compiles into the module, so without the `--remap-path-prefix` pair
+  in `build:wasm` the artifact — and the `main.js` embedding it — differs per
+  checkout location, and a published release cannot be reproduced. With them,
+  two builds from different directories are byte-identical.
 - **Typst crates are pinned `=0.15.1`** (`typst`, `typst-ide`, `typst-kit`,
   `typst-layout`, `typst-pdf`). They move together; do not bump one alone.
 - **esbuild externals**: `obsidian`, `electron`, node builtins, and every
