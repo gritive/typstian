@@ -84,6 +84,20 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: test "$(node -p "require('./manifest.json').version")" = "$TAG"
 
+      - name: Check out the tagged history for the release notes
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          path: repository
+
+      - name: Write release notes
+        env:
+          TAG: ${{ github.ref_name }}
+          GH_REPO: ${{ github.repository }}
+        working-directory: repository
+        run: node scripts/release-notes.mjs "$TAG" "$GH_REPO" > ../release-notes.md
+
       - name: Generate artifact attestation
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
@@ -97,4 +111,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
-        run: gh release create "$TAG" --verify-tag --title "$TAG" --generate-notes main.js manifest.json styles.css
+        run: |
+          gh release create "$TAG" --verify-tag --title "$TAG" \
+            --notes-file release-notes.md main.js manifest.json styles.css

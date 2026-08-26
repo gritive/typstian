@@ -122,7 +122,8 @@ describe("release contract", () => {
       expect(readme).not.toContain(developerOnly);
     }
     expect(workflow).not.toContain("--draft");
-    expect(workflow).toContain("--generate-notes");
+    expect(workflow).toContain("scripts/release-notes.mjs");
+    expect(workflow).toContain("--notes-file release-notes.md");
     expect(contributing).toContain("npm run release");
     expect(contributing).toContain("community.obsidian.md/plugins/typstian");
     expect(contributing).toContain("Rust 1.92 or newer");
