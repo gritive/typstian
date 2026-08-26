@@ -35,7 +35,15 @@ npm run build
 npm run licenses:check
 cargo test   --manifest-path helper/wasm/Cargo.toml
 cargo clippy --manifest-path helper/wasm/Cargo.toml --all-targets -- -D warnings
+
+make                      # same as npm run build
+make clean                # drop the cargo cache, main.js, and coverage output
 ```
+
+The cargo cache under `helper/wasm/target/` grows to several gigabytes once the
+Rust tests and a WASM rebuild have run; `make clean` is how you reclaim it. It
+leaves the checked-in `helper/wasm/pkg/` artifacts alone, because those are
+build inputs rather than build output.
 
 Commit the regenerated files under `helper/wasm/pkg/` after `npm run build:wasm`;
 a plain `npm test` and `npm run build` consume the checked-in artifacts and do
