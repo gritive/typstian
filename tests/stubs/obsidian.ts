@@ -11,6 +11,10 @@ export class TextFileView {
   requestSave(): void {}
 }
 
+export class View {
+  constructor(public readonly leaf?: unknown) {}
+}
+
 export class ItemView {
   contentEl: HTMLElement;
 

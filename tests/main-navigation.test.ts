@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { TFile } from "obsidian";
+import { TFile, View } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
 import type { DependencyIndex } from "../src/dependency-index";
@@ -192,7 +192,11 @@ function harness(leaves: DeferredLeaf[]) {
       return { event, callback };
     }),
     onLayoutReady: vi.fn(),
-    getActiveViewOfType: vi.fn(),
+    getActiveViewOfType: vi.fn((type: unknown) => (
+      type === View && workspace.activeLeaf !== null && workspace.activeLeaf !== undefined
+        ? { leaf: workspace.activeLeaf }
+        : null
+    )),
     requestSaveLayout: vi.fn(),
   };
   const vault = {

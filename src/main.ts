@@ -5,6 +5,7 @@ import {
   Notice,
   Plugin,
   TFile,
+  View,
   type WorkspaceLeaf
 } from "obsidian";
 
@@ -466,7 +467,7 @@ private handleVaultPath(vaultPath: string, includeDirectEntry = true): void {
       vaultPath
     );
     if (!isCurrent()) return null;
-    const previousLeaf = this.app.workspace.activeLeaf;
+    const previousLeaf = this.activeLeaf();
     const created = leaf === undefined;
     if (leaf === undefined) {
       this.creatingSourceLeaf = true;
@@ -512,7 +513,7 @@ private handleVaultPath(vaultPath: string, includeDirectEntry = true): void {
       && leaf.view.canDiscardUncommittedOpen();
     if (!isUntouchedTarget()) return;
 
-    if (this.app.workspace.activeLeaf === leaf) {
+    if (this.activeLeaf() === leaf) {
       if (previousLeaf === null || previousLeaf === leaf) return;
       this.revealingSourceLeaf = previousLeaf;
       try {
@@ -524,7 +525,7 @@ private handleVaultPath(vaultPath: string, includeDirectEntry = true): void {
       }
     }
     if (
-      this.app.workspace.activeLeaf !== leaf
+      this.activeLeaf() !== leaf
       && isUntouchedTarget()
     ) {
       leaf.detach();
@@ -550,6 +551,11 @@ private handleVaultPath(vaultPath: string, includeDirectEntry = true): void {
         this.compilers.delete(compiler);
       }
     }
+  }
+
+  // Workspace.activeLeaf is deprecated; the active view carries its own leaf.
+  private activeLeaf(): WorkspaceLeaf | null {
+    return this.app.workspace.getActiveViewOfType(View)?.leaf ?? null;
   }
 
   private vaultRoot(): string {
