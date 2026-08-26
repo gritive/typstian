@@ -9,6 +9,14 @@ import {
   type WorkspaceLeaf
 } from "obsidian";
 
+import {
+  EMPTY_COMPILE_STATUS,
+  compileStatusLabel,
+  reduceCompileStatus,
+  type CompileStatusEvent,
+  type CompileStatusState,
+  compileOutcomeForFailure
+} from "./compile-status";
 import { DependencyIndex } from "./dependency-index";
 import { collectDirtyBuffers } from "./dirty-buffer-overlay";
 import { ForwardSearchScheduler } from "./forward-search-scheduler";
@@ -66,6 +74,10 @@ export default class TypstianPlugin extends Plugin {
   private creatingSourceLeaf = false;
   private settingsUpdate = Promise.resolve();
 
+  private compileStatus: CompileStatusState = EMPTY_COMPILE_STATUS;
+  private compileStatusEl: HTMLElement | null = null;
+  private nextPreviewId = 0;
+
   private unloaded = false;
   private lifecycleGeneration = 0;
 
@@ -75,6 +87,10 @@ export default class TypstianPlugin extends Plugin {
     this.settings = normalizeSettings(
       await this.loadData() as Parameters<typeof normalizeSettings>[0] | null ?? {}
     );
+
+    this.compileStatus = EMPTY_COMPILE_STATUS;
+    this.compileStatusEl = this.addStatusBarItem();
+    this.renderCompileStatus();
 
     this.registerView(TYPST_VIEW_TYPE, (leaf) => this.createEditorView(leaf));
     this.registerExtensions(["typ"], TYPST_VIEW_TYPE);
@@ -158,6 +174,10 @@ export default class TypstianPlugin extends Plugin {
     for (const compiler of this.compilers) compiler.close();
     this.compilers.clear();
     this.dependencies.clear();
+    // Obsidian removes the item itself; dropping the reference keeps a late
+    // compile result from writing into a detached element.
+    this.compileStatusEl = null;
+    this.compileStatus = EMPTY_COMPILE_STATUS;
   }
 
   async updateSettings(value: TypstianSettings): Promise<void> {
@@ -198,12 +218,13 @@ export default class TypstianPlugin extends Plugin {
   }
 
   private createPreviewView(leaf: WorkspaceLeaf): TypstPreviewView {
+    const previewId = `preview-${++this.nextPreviewId}`;
     let compiler: TypstianCompilerClient | null = null;
     const getCompiler = (): TypstianCompilerClient => {
       compiler ??= this.createCompilerClient();
       return compiler;
     };
-    const disposeBackend = (): void => {
+    const closeCompiler = (): void => {
       if (compiler === null) return;
       compiler.close();
       this.compilers.delete(compiler);
@@ -211,32 +232,76 @@ export default class TypstianPlugin extends Plugin {
     };
 
     return new TypstPreviewView(leaf, {
-      compile: (sourcePath, revision, signal) => {
+      compile: async (sourcePath, revision, signal) => {
         const vaultRoot = this.vaultRoot();
         const root = this.compilationRoot(vaultRoot);
         const entryPath = resolveCompilerEntryPath(vaultRoot, root, sourcePath);
         if (entryPath === null) {
-          return Promise.reject(new CompilerClientError(
+          throw new CompilerClientError(
             "invalid-input",
             "The Typst entry file must be inside the configured compilation root."
-          ));
+          );
         }
-        return getCompiler().compile({
-          entryPath,
-          revision,
-          overlay: this.dirtyBufferOverlay(vaultRoot, root),
-          signal
-        });
+        this.noteCompileStatus({ type: "started", preview: previewId });
+        try {
+          const result = await getCompiler().compile({
+            entryPath,
+            revision,
+            overlay: this.dirtyBufferOverlay(vaultRoot, root),
+            signal
+          });
+          this.noteCompileStatus(result.ok
+            ? { type: "settled", preview: previewId, outcome: "ok" }
+            : {
+              type: "settled",
+              preview: previewId,
+              outcome: "error",
+              errorCount: result.diagnostics.filter((one) => one.severity === "error").length
+            });
+          return result;
+        } catch (error) {
+          this.noteCompileStatus({
+            type: "settled",
+            preview: previewId,
+            outcome: compileOutcomeForFailure(error, signal.aborted)
+          });
+          throw error;
+        }
       },
       jump: (request) => getCompiler().jump(request),
       forward: (request) => getCompiler().forward(request),
       onCompiled: (sourcePath, result) => this.recordDependencies(sourcePath, result),
       onDiagnostic: (diagnostic) => { void this.revealDiagnostic(diagnostic); },
       onSourceLocation: (location, isCurrent) => this.revealSourceLocation(location, isCurrent),
-      disposeBackend,
-      restartBackend: disposeBackend,
+      disposeBackend: () => {
+        closeCompiler();
+        this.noteCompileStatus({ type: "disposed", preview: previewId });
+      },
+      // A restart keeps the preview open, so its status entry survives it.
+      restartBackend: closeCompiler,
       requestSaveLayout: () => this.app.workspace.requestSaveLayout()
     });
+  }
+
+  /**
+   * Every preview reports into one status bar item: a preview is rarely the
+   * active leaf — the user types in the editor — so keying the item to the
+   * active leaf would blank it exactly when a compile is worth watching. A
+   * compile in flight anywhere therefore wins, and once everything settles the
+   * preview that settled last speaks, which is the one the user just edited.
+   */
+  private noteCompileStatus(event: CompileStatusEvent): void {
+    this.compileStatus = reduceCompileStatus(this.compileStatus, event);
+    this.renderCompileStatus();
+  }
+
+  private renderCompileStatus(): void {
+    const element = this.compileStatusEl;
+    if (element === null) return;
+    const label = compileStatusLabel(this.compileStatus);
+    element.setText(label);
+    if (label === "") element.hide();
+    else element.show();
   }
 
   private createCompilerClient(): TypstianCompilerClient {

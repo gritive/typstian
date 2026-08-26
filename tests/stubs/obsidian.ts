@@ -84,6 +84,17 @@ export class Plugin {
     void tab;
   }
 
+  // Obsidian's status bar items carry its HTMLElement extensions, which the DOM
+  // stub does not install globally.
+  addStatusBarItem(): HTMLElement {
+    const element = document.createElement("div");
+    return Object.assign(element, {
+      setText(text: string) { element.textContent = text; },
+      hide() { element.style.display = "none"; },
+      show() { element.style.removeProperty("display"); }
+    });
+  }
+
   registerEvent<T>(event: T): T {
     return event;
   }
