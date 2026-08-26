@@ -1,4 +1,4 @@
-import { PluginSettingTab, Setting, type App, type Plugin } from "obsidian";
+import { PluginSettingTab, type App, type Plugin, type SettingDefinitionItem } from "obsidian";
 
 import type { TypstianSettings } from "./settings-model";
 
@@ -7,38 +7,29 @@ export interface SettingsHost {
   updateSettings(value: TypstianSettings): Promise<void>;
 }
 
-export class TypstianSettingsTab extends PluginSettingTab {
-  private saveTimer: number | null = null;
+const ROOT_PATH_KEY = "rootPath";
 
+export class TypstianSettingsTab extends PluginSettingTab {
   constructor(app: App, private readonly host: Plugin & SettingsHost) {
     super(app, host);
   }
 
-  override display(): void {
-    this.containerEl.replaceChildren();
-
-    new Setting(this.containerEl)
-      .setName("Compilation root")
-      .setDesc("Optional path relative to the vault. Empty uses the vault root.")
-      .addText((text) => text
-        .setPlaceholder("projects/book")
-        .setValue(this.host.settings.rootPath)
-        .onChange((value) => {
-          this.scheduleSave({ rootPath: value });
-        }));
+  override getSettingDefinitions(): SettingDefinitionItem[] {
+    return [
+      {
+        name: "Compilation root",
+        desc: "Optional path relative to the vault. Empty uses the vault root.",
+        control: { type: "text", key: ROOT_PATH_KEY, placeholder: "projects/book" },
+      },
+    ];
   }
 
-  private scheduleSave(change: Partial<TypstianSettings>): void {
-    if (this.saveTimer !== null) window.clearTimeout(this.saveTimer);
-    const timer = window.setTimeout(() => {
-      this.saveTimer = null;
-      void this.save(change);
-    }, 300);
-    this.saveTimer = timer;
-    this.host.registerInterval(timer);
+  override getControlValue(key: string): unknown {
+    return key === ROOT_PATH_KEY ? this.host.settings.rootPath : undefined;
   }
 
-  private async save(change: Partial<TypstianSettings>): Promise<void> {
-    await this.host.updateSettings({ ...this.host.settings, ...change });
+  override async setControlValue(key: string, value: unknown): Promise<void> {
+    if (key !== ROOT_PATH_KEY || typeof value !== "string") return;
+    await this.host.updateSettings({ ...this.host.settings, rootPath: value });
   }
 }

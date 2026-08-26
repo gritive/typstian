@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { normalizeSettings } from "../src/settings-model";
 import { TypstianSettingsTab } from "../src/settings-tab";
@@ -23,60 +23,53 @@ describe("normalizeSettings", () => {
 
 
 describe("TypstianSettingsTab", () => {
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  it("saves only the latest compilation root after typing settles", async () => {
-    vi.useFakeTimers();
+  const hostFor = () => {
     const host = {
       settings: { rootPath: "" },
-      registerInterval: vi.fn((id: number) => id),
       updateSettings: vi.fn((settings: { rootPath: string }) => {
         host.settings = settings;
         return Promise.resolve();
       }),
     };
-    const tab = new TypstianSettingsTab({} as never, host as never);
-    tab.display();
-    const input = tab.containerEl.querySelector("input");
-    if (input === null) throw new Error("missing compilation root input");
+    return host;
+  };
 
-    for (const value of ["p", "pr", "project"]) {
-      input.value = value;
-      input.dispatchEvent(new Event("input"));
-    }
+  it("declares the compilation root so Obsidian can index it for search", () => {
+    const tab = new TypstianSettingsTab({} as never, hostFor() as never);
 
-    expect(host.updateSettings).not.toHaveBeenCalled();
-    await vi.advanceTimersByTimeAsync(299);
-    expect(host.updateSettings).not.toHaveBeenCalled();
-    await vi.advanceTimersByTimeAsync(1);
-    expect(host.updateSettings).toHaveBeenCalledOnce();
-    expect(host.updateSettings).toHaveBeenCalledWith({ rootPath: "project" });
+    expect(tab.getSettingDefinitions()).toEqual([
+      {
+        name: "Compilation root",
+        desc: "Optional path relative to the vault. Empty uses the vault root.",
+        control: { type: "text", key: "rootPath", placeholder: "projects/book" },
+      },
+    ]);
   });
 
-  it("registers pending saves with the plugin unload lifecycle", async () => {
-    vi.useFakeTimers();
-    const timers: number[] = [];
-    const host = {
-      settings: { rootPath: "" },
-      registerInterval: vi.fn((id: number) => {
-        timers.push(id);
-        return id;
-      }),
-      updateSettings: vi.fn(() => Promise.resolve()),
-    };
+  it("reads the compilation root from the host settings", () => {
+    const host = hostFor();
+    host.settings = { rootPath: "projects/book" };
+
+    expect(new TypstianSettingsTab({} as never, host as never).getControlValue("rootPath"))
+      .toBe("projects/book");
+  });
+
+  it("persists a changed compilation root through the host", async () => {
+    const host = hostFor();
     const tab = new TypstianSettingsTab({} as never, host as never);
-    tab.display();
-    const input = tab.containerEl.querySelector("input");
-    if (input === null) throw new Error("missing compilation root input");
 
-    input.value = "project";
-    input.dispatchEvent(new Event("input"));
-    for (const timer of timers) globalThis.clearTimeout(timer);
-    await vi.advanceTimersByTimeAsync(300);
+    await tab.setControlValue("rootPath", "projects/book");
 
-    expect(host.registerInterval).toHaveBeenCalledOnce();
+    expect(host.updateSettings).toHaveBeenCalledWith({ rootPath: "projects/book" });
+  });
+
+  it("ignores a key or value it does not own", async () => {
+    const host = hostFor();
+    const tab = new TypstianSettingsTab({} as never, host as never);
+
+    await tab.setControlValue("unknown", "value");
+    await tab.setControlValue("rootPath", 7);
+
     expect(host.updateSettings).not.toHaveBeenCalled();
   });
 });
