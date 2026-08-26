@@ -2,6 +2,7 @@
 
 import type { WorkspaceLeaf } from "obsidian";
 import { undo } from "@codemirror/commands";
+import { SearchQuery, setSearchQuery } from "@codemirror/search";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("obsidian", () => ({
@@ -24,6 +25,12 @@ function createView(onDirty = vi.fn(), onForwardSearch = vi.fn()) {
   const view = new TypstEditorView(leaf, { onDirty, onForwardSearch });
   document.body.appendChild(view.contentEl);
   return { view, modify, onDirty, onForwardSearch };
+}
+
+function pressKey(view: TypstEditorView, init: KeyboardEventInit) {
+  view.editorView.contentDOM.dispatchEvent(
+    new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init }),
+  );
 }
 
 describe("TypstEditorView", () => {
@@ -83,6 +90,42 @@ describe("TypstEditorView", () => {
 
     expect(view.getViewData()).toBe("new file");
     expect(undo(view.editorView)).toBe(false);
+  });
+
+  it("opens the search panel from the find shortcut and closes it with Escape", () => {
+    const { view } = createView();
+
+    pressKey(view, { key: "f", ctrlKey: true });
+    expect(view.contentEl.querySelector(".cm-search")).not.toBeNull();
+
+    pressKey(view, { key: "Escape" });
+    expect(view.contentEl.querySelector(".cm-search")).toBeNull();
+  });
+
+  it("closes the search panel on the first Escape even with text selected", () => {
+    const { view } = createView();
+    view.setViewData("alpha beta", true);
+    view.editorView.dispatch({ selection: { anchor: 0, head: 5 } });
+
+    pressKey(view, { key: "f", ctrlKey: true });
+    pressKey(view, { key: "Escape" });
+
+    // Escape also simplifies a selection, so the panel only closes on the
+    // first press while the search binding takes precedence.
+    expect(view.contentEl.querySelector(".cm-search")).toBeNull();
+  });
+
+  it("jumps to the next match from the find-next shortcut", () => {
+    const { view } = createView();
+    view.setViewData("alpha beta alpha", true);
+    view.editorView.dispatch({
+      selection: { anchor: 1 },
+      effects: setSearchQuery.of(new SearchQuery({ search: "alpha" })),
+    });
+
+    pressKey(view, { key: "g", ctrlKey: true });
+
+    expect(view.editorView.state.selection.main.from).toBe(11);
   });
 
   it("reveals a diagnostic using clamped 1-based line and column coordinates", () => {

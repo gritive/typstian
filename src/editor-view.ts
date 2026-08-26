@@ -4,6 +4,7 @@ import {
   indentOnInput,
   syntaxHighlighting,
 } from "@codemirror/language";
+import { search, searchKeymap } from "@codemirror/search";
 import { EditorState, type Extension } from "@codemirror/state";
 import {
   drawSelection,
@@ -56,7 +57,12 @@ const editorExtensions: Extension = [
   EditorState.allowMultipleSelections.of(true),
   indentOnInput(),
   syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
-  keymap.of([...defaultKeymap, ...historyKeymap]),
+  // Obsidian's own find bar never reaches a custom TextFileView, so this view
+  // carries its own search panel.
+  search(),
+  // Search binds ahead of the defaults so Escape closes the panel instead of
+  // being eaten by the selection-simplifying Escape in `defaultKeymap`.
+  keymap.of([...searchKeymap, ...defaultKeymap, ...historyKeymap]),
   highlightActiveLine(),
   EditorView.lineWrapping,
   typstLanguage,
