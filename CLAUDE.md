@@ -15,7 +15,9 @@ npm run dev               # esbuild watch
 
 cargo test   --manifest-path helper/wasm/Cargo.toml
 cargo clippy --manifest-path helper/wasm/Cargo.toml --all-targets -- -D warnings
-npm run build:wasm        # wasm-pack web target -> helper/wasm/pkg/
+npm run build:wasm        # wasm-pack web target -> helper/wasm/pkg/, then
+                          # scripts/normalize-wasm-glue.mjs strips the blanket
+                          # eslint-disable the community review rejects
 ```
 
 Run `npm run build:wasm` after changing `helper/wasm/`, then commit the generated
@@ -47,9 +49,13 @@ and embeds the result in `main.js`; Community releases contain only `main.js`,
   `src/compiler-client.ts` and `helper/wasm/src/lib.rs`. Bump both together; the
   environment handshake rejects a mismatch.
 - **Release contract**: `manifest.json` `version` must exist as a key in
-  `versions.json` mapping to `minAppVersion`. `tests/release-contract.test.ts`
-  also guards the embedded WASM and third-party notices, pinned release workflow,
-  checked-in WASM glue/artifact, and `styles.css`.
+  `versions.json` mapping to `minAppVersion`. `npm run release -- <patch|minor|
+  major|x.y.z>` bumps every version-bearing file together, regenerates the
+  notices, runs the gates, then commits, tags, and pushes.
+  `tests/release-contract.test.ts` also guards the embedded WASM and third-party
+  notices, pinned release workflow, checked-in WASM glue/artifact, `styles.css`,
+  and the README paragraphs answering the community review's filesystem and
+  dynamic-execution findings.
 - **Typst crates are pinned `=0.15.1`** (`typst`, `typst-ide`, `typst-kit`,
   `typst-layout`, `typst-pdf`). They move together; do not bump one alone.
 - **esbuild externals**: `obsidian`, `electron`, node builtins, and every
@@ -57,7 +63,10 @@ and embeds the result in `main.js`; Community releases contain only `main.js`,
   `esbuild.config.mjs`. Bundling CodeMirror creates a second instance and breaks
   the host editor. vitest mirrors this with `dedupe` in `vitest.config.mts`.
 - **`obsidian` is aliased** to `tests/stubs/obsidian.ts` under vitest; there is
-  no real Obsidian in tests.
+  no real Obsidian in tests. Obsidian's DOM extensions (`createEl`/`createDiv`/
+  `createSpan` on `Node`, plus `win` and `doc`) are separate: they arrive through
+  the `tests/stubs/obsidian-dom.ts` setup file, and only in test files that opt
+  into `// @vitest-environment happy-dom`.
 - `main.js` is a gitignored build artifact (~19 MB): PDF.js, its in-process
   worker, the embedded browser compiler-worker source, the Brotli-compressed
   WASM compiler, and third-party notices are bundled without a CDN.
@@ -89,6 +98,11 @@ and embeds the result in `main.js`; Community releases contain only `main.js`,
   transfers it without a renderer-side copy.
 - Typstian uses embedded fonts plus fonts in bounded standard OS
   directories. It does not accept additional font paths.
+- **Renderer code must not touch main-window globals.** A preview can live in a
+  popout window, so timers, `getComputedStyle`, `getSelection`, and
+  `activeElement` go through the element's own `win`/`doc`, and elements are
+  created through their parent's `createEl`/`createDiv`/`createSpan`.
+  `eslint-plugin-obsidianmd` enforces the weaker form of this.
 - Compiler test fixtures are under `helper/tests/fixtures/`
   (`project/`, `diagnostics/`, `escape/`, `fonts/`), not `tests/fixtures/`.
 

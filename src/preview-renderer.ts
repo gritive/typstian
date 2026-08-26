@@ -137,28 +137,23 @@ export class PreviewRenderer {
 
   private renderMessage(message: string, role: "status" | "alert"): void {
     this.root.querySelector(".typst-preview-message")?.remove();
-    const element = createEl("p");
-    element.className = "typst-preview-message";
+    const element = this.root.createEl("p", { cls: "typst-preview-message" });
     element.setAttribute("role", role);
     element.textContent = message;
-    this.root.append(element);
   }
 
   private renderError(message: string, diagnostics: readonly CompilerDiagnostic[]): void {
-    const container = createDiv();
-    container.className = "typst-preview-error";
+    const container = this.root.createDiv({ cls: "typst-preview-error" });
     container.setAttribute("role", "alert");
-
-    const summary = createEl("p");
-    summary.textContent = message;
-    container.append(summary);
+    container.createEl("p").textContent = message;
 
     for (const diagnostic of diagnostics) {
       const located = diagnostic.path !== undefined
         && diagnostic.line !== undefined
         && diagnostic.column !== undefined;
-      const element = createEl(located ? "button" : "p");
-      element.className = "typst-preview-diagnostic";
+      const element = container.createEl(located ? "button" : "p", {
+        cls: "typst-preview-diagnostic",
+      });
       if (element instanceof HTMLButtonElement) {
         element.type = "button";
         element.textContent =
@@ -171,9 +166,6 @@ export class PreviewRenderer {
       } else {
         element.textContent = diagnostic.message;
       }
-      container.append(element);
     }
-
-    this.root.append(container);
   }
 }

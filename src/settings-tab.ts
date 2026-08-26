@@ -8,8 +8,13 @@ export interface SettingsHost {
 }
 
 const ROOT_PATH_KEY = "rootPath";
+// Every accepted change restarts each preview's compiler backend, so a burst of
+// keystrokes has to settle into one save.
+const SAVE_DEBOUNCE_MS = 300;
 
 export class TypstianSettingsTab extends PluginSettingTab {
+  private saveTimer: number | null = null;
+
   constructor(app: App, private readonly host: Plugin & SettingsHost) {
     super(app, host);
   }
@@ -28,8 +33,15 @@ export class TypstianSettingsTab extends PluginSettingTab {
     return key === ROOT_PATH_KEY ? this.host.settings.rootPath : undefined;
   }
 
-  override async setControlValue(key: string, value: unknown): Promise<void> {
+  override setControlValue(key: string, value: unknown): void {
     if (key !== ROOT_PATH_KEY || typeof value !== "string") return;
-    await this.host.updateSettings({ ...this.host.settings, rootPath: value });
+    const win = this.containerEl.win;
+    if (this.saveTimer !== null) win.clearTimeout(this.saveTimer);
+    const timer = win.setTimeout(() => {
+      this.saveTimer = null;
+      void this.host.updateSettings({ ...this.host.settings, rootPath: value });
+    }, SAVE_DEBOUNCE_MS);
+    this.saveTimer = timer;
+    this.host.registerInterval(timer);
   }
 }

@@ -25,6 +25,13 @@ if (typeof document !== "undefined") {
     Object.defineProperty(Node.prototype, name, { configurable: true, writable: true, value });
   }
 
+  Object.defineProperty(Node.prototype, "win", {
+    configurable: true,
+    get(this: Node): Window {
+      return (this.ownerDocument ?? document).defaultView ?? window;
+    },
+  });
+
   Object.defineProperty(Node.prototype, "doc", {
     configurable: true,
     get(this: Node): Document {
@@ -32,12 +39,6 @@ if (typeof document !== "undefined") {
     },
   });
 
-  const globals = globalThis as unknown as {
-    createEl: (tag: string, info?: { cls?: string } | string) => HTMLElement;
-    createDiv: (info?: { cls?: string } | string) => HTMLElement;
-    createFragment: () => DocumentFragment;
-  };
+  const globals = globalThis as unknown as { createFragment: () => DocumentFragment };
   globals.createFragment = () => document.createDocumentFragment();
-  globals.createEl = (tag, info) => create(document.createDocumentFragment(), tag, info);
-  globals.createDiv = (info) => create(document.createDocumentFragment(), "div", info);
 }

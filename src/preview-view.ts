@@ -178,19 +178,18 @@ export class TypstPreviewView extends ItemView {
     this.closed = false;
     this.contentEl.replaceChildren();
     this.contentEl.classList.add("typstian-preview");
-    const toolbar = createDiv();
-    toolbar.className = "typst-preview-toolbar";
-    this.contentEl.append(toolbar);
+    const toolbar = this.contentEl.createDiv({ cls: "typst-preview-toolbar" });
 
-    toolbar.append(
-      this.createToolbarButton("−", "Zoom out", () => this.renderer?.zoomOut()),
-      this.createToolbarButton("+", "Zoom in", () => this.renderer?.zoomIn()),
-      this.createToolbarButton("Fit", "Fit pages to the preview width", () => this.renderer?.fitToWidth())
+    this.createToolbarButton(toolbar, "−", "Zoom out", () => this.renderer?.zoomOut());
+    this.createToolbarButton(toolbar, "+", "Zoom in", () => this.renderer?.zoomIn());
+    this.createToolbarButton(
+      toolbar,
+      "Fit",
+      "Fit pages to the preview width",
+      () => this.renderer?.fitToWidth(),
     );
 
-    const pages = createDiv();
-    pages.className = "typst-preview-pages";
-    this.contentEl.append(pages);
+    const pages = this.contentEl.createDiv({ cls: "typst-preview-pages" });
     this.mountRenderer(pages);
     this.follow(this.state.sourcePath);
     return Promise.resolve();
@@ -312,11 +311,12 @@ export class TypstPreviewView extends ItemView {
   }
 
   private createToolbarButton(
+    parent: HTMLElement,
     label: string,
     title: string,
     action: () => void | Promise<void> | undefined
   ): HTMLButtonElement {
-    const button = createEl("button");
+    const button = parent.createEl("button");
     button.type = "button";
     button.textContent = label;
     button.title = title;
