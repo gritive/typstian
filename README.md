@@ -38,6 +38,13 @@ select one to open its `.typ` file and move the cursor to the reported location.
 The command **Typstian: Check Typst environment** reports the embedded Typst
 version and compilation root.
 
+The command **Typstian: Save the compiled PDF to the vault** compiles the active
+`.typ` file, unsaved text included, and writes the PDF beside it under the same
+name. An existing file is never overwritten: the PDF lands on the next free
+`name-1.pdf`, `name-2.pdf`, and so on, and the notice names the file it wrote.
+This is the only place Typstian writes to your vault, and it happens only when
+you run this command.
+
 Typstian recompiles shortly after you stop typing, using the unsaved text of
 every open Typst editor in place of its file on disk. Obsidian still owns the
 normal save lifecycle; the plugin never saves the buffer for you. Everything the

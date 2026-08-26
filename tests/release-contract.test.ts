@@ -132,6 +132,11 @@ describe("release contract", () => {
     ]) {
       expect(readme).not.toContain(developerOnly);
     }
+    // The PDF export is the plugin's only write into the user's vault, so the
+    // Community-directory description has to state where the file lands and
+    // that nothing is overwritten.
+    expect(readme).toContain("Typstian: Save the compiled PDF to the vault");
+    expect(readme).toContain("An existing file is never overwritten");
     expect(workflow).not.toContain("--draft");
     expect(workflow).toContain("scripts/release-notes.mjs");
     expect(workflow).toContain("--notes-file release-notes.md");

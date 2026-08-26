@@ -30,6 +30,7 @@ import {
   resolveDiagnosticVaultPath,
   resolveCompilerEntryPath
 } from "./path-policy";
+import { resolvePdfExportPath } from "./pdf-export";
 import {
   chooseForwardPreview,
   isSavedForwardSnapshot,
@@ -86,6 +87,16 @@ export default class TypstianPlugin extends Plugin {
         const source = this.activeTypstPath();
         if (source === null) return false;
         if (!checking) void this.openPreview(source);
+        return true;
+      }
+    });
+    this.addCommand({
+      id: "save-compiled-pdf",
+      name: "Save the compiled PDF to the vault",
+      checkCallback: (checking) => {
+        const source = this.activeTypstPath();
+        if (source === null) return false;
+        if (!checking) void this.savePdf(source);
         return true;
       }
     });
@@ -544,6 +555,56 @@ private handleVaultPath(vaultPath: string, includeDirectEntry = true): void {
       const message = error instanceof CompilerClientError
         ? error.message
         : "Unable to initialize the bundled Typstian WASM compiler.";
+      new Notice(message);
+    } finally {
+      if (compiler !== null) {
+        compiler.close();
+        this.compilers.delete(compiler);
+      }
+    }
+  }
+
+  private async savePdf(sourcePath: string): Promise<void> {
+    const vaultRoot = this.vaultRoot();
+    const root = this.compilationRoot(vaultRoot);
+    const entryPath = resolveCompilerEntryPath(vaultRoot, root, sourcePath);
+    if (entryPath === null) {
+      new Notice("The Typst entry file must be inside the configured compilation root.");
+      return;
+    }
+    const targetPath = resolvePdfExportPath(
+      sourcePath,
+      (candidate) => this.app.vault.getAbstractFileByPath(candidate) !== null
+    );
+    if (targetPath === null) {
+      new Notice("Too many saved PDFs sit beside this Typst file; remove some and try again.");
+      return;
+    }
+
+    // The preview keeps no bytes to hand over, so the current source is compiled
+    // afresh on a client of its own; the running previews keep their sessions.
+    let compiler: TypstianCompilerClient | null = null;
+    try {
+      compiler = this.createCompilerClient();
+      const result = await compiler.compile({
+        entryPath,
+        revision: 1,
+        overlay: this.dirtyBufferOverlay(vaultRoot, root)
+      });
+      if (!result.ok) {
+        new Notice(result.message);
+        return;
+      }
+      const pdf = result.pdf;
+      await this.app.vault.createBinary(
+        targetPath,
+        pdf.buffer.slice(pdf.byteOffset, pdf.byteOffset + pdf.byteLength)
+      );
+      new Notice(`Saved the compiled PDF to ${targetPath}`);
+    } catch (error) {
+      const message = error instanceof CompilerClientError
+        ? error.message
+        : `Unable to save the compiled PDF to ${targetPath}`;
       new Notice(message);
     } finally {
       if (compiler !== null) {
