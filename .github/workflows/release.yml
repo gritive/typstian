@@ -1,0 +1,100 @@
+name: Release Obsidian plugin
+
+on:
+  push:
+    tags:
+      - "*"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Use Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22.x"
+          cache: npm
+
+      - name: Install CJK fonts for font-fallback tests
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends fonts-noto-cjk
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install pinned Rust toolchain
+        run: |
+          rustup toolchain install 1.98.0 --profile minimal --target wasm32-unknown-unknown
+          rustup default 1.98.0
+          cargo install wasm-pack --version 0.15.0 --locked
+
+      - name: Rebuild bundled WASM from source
+        run: npm run build:wasm
+
+      - name: Verify generated dependency notices
+        run: npm run licenses:check
+
+      - name: Verify release tag
+        env:
+          TAG: ${{ github.ref_name }}
+        run: test "$(node -p "require('./manifest.json').version")" = "$TAG"
+
+      - name: Test plugin
+        run: npm test
+
+      - name: Lint plugin
+        run: npm run lint
+
+      - name: Build plugin
+        run: npm run build
+
+      - name: Upload release files
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: typstian-release
+          path: |
+            main.js
+            manifest.json
+            styles.css
+          if-no-files-found: error
+          retention-days: 1
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - name: Download release files
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: typstian-release
+
+      - name: Verify release tag
+        env:
+          TAG: ${{ github.ref_name }}
+        run: test "$(node -p "require('./manifest.json').version")" = "$TAG"
+
+      - name: Generate artifact attestation
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            main.js
+            manifest.json
+            styles.css
+
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: gh release create "$TAG" --verify-tag --title "$TAG" --draft main.js manifest.json styles.css

@@ -1,0 +1,308 @@
+// @vitest-environment happy-dom
+
+import type { WorkspaceLeaf } from "obsidian";
+import { undo } from "@codemirror/commands";
+import { describe, expect, it, vi } from "vitest";
+
+vi.mock("obsidian", () => ({
+  Platform: { isMacOS: false },
+  TextFileView: class {
+    contentEl = document.createElement("div");
+    data = "";
+    requestSave = vi.fn();
+
+    constructor() {}
+  },
+}));
+
+import { TYPST_VIEW_TYPE, TypstEditorView, utf8ByteOffset } from "../src/editor-view";
+import { ForwardSearchScheduler } from "../src/forward-search-scheduler";
+
+function createView(onDirty = vi.fn(), onForwardSearch = vi.fn()) {
+  const modify = vi.fn();
+  const leaf = { app: { vault: { modify } } } as unknown as WorkspaceLeaf;
+  const view = new TypstEditorView(leaf, { onDirty, onForwardSearch });
+  document.body.appendChild(view.contentEl);
+  return { view, modify, onDirty, onForwardSearch };
+}
+
+describe("TypstEditorView", () => {
+  it("identifies itself as the dedicated Typst file view", () => {
+    const { view } = createView();
+
+    expect(view.getViewType()).toBe(TYPST_VIEW_TYPE);
+    expect(view.getDisplayText()).toBe("Typst editor");
+  });
+
+  it("loads and returns view data without scheduling a recursive save", () => {
+    const { view, onDirty } = createView();
+    const requestSave = vi.spyOn(view, "requestSave");
+
+    view.setViewData("= Loaded", false);
+
+    expect(view.getViewData()).toBe("= Loaded");
+    expect(requestSave).not.toHaveBeenCalled();
+    expect(onDirty).not.toHaveBeenCalled();
+  });
+
+  it("routes user edits through TextFileView requestSave and marks preview stale", () => {
+    const { view, modify, onDirty } = createView();
+    const requestSave = vi.spyOn(view, "requestSave");
+
+    view.editorView.dispatch({ changes: { from: 0, insert: "Hello" } });
+
+    expect(view.getViewData()).toBe("Hello");
+    expect(requestSave).toHaveBeenCalledOnce();
+    expect(onDirty).toHaveBeenCalledOnce();
+    expect(modify).not.toHaveBeenCalled();
+  });
+
+  it("provides undo history for ordinary editor changes", () => {
+    const { view } = createView();
+    view.editorView.dispatch({ changes: { from: 0, insert: "first" } });
+
+    expect(undo(view.editorView)).toBe(true);
+    expect(view.getViewData()).toBe("");
+  });
+
+  it("clears content and history when switching files", () => {
+    const { view } = createView();
+    view.editorView.dispatch({ changes: { from: 0, insert: "old file" } });
+
+    view.clear();
+
+    expect(view.getViewData()).toBe("");
+    expect(undo(view.editorView)).toBe(false);
+  });
+
+  it("treats setViewData with clear as a new history boundary", () => {
+    const { view } = createView();
+    view.editorView.dispatch({ changes: { from: 0, insert: "old file" } });
+
+    view.setViewData("new file", true);
+
+    expect(view.getViewData()).toBe("new file");
+    expect(undo(view.editorView)).toBe(false);
+  });
+
+  it("reveals a diagnostic using clamped 1-based line and column coordinates", () => {
+    const { view } = createView();
+    view.setViewData("one\ntwo", true);
+    const dispatch = vi.spyOn(view.editorView, "dispatch");
+
+    view.revealDiagnostic(99, 99);
+
+    expect(view.editorView.state.selection.main.head).toBe(7);
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ scrollIntoView: true }),
+    );
+    expect(document.activeElement).toBe(view.editorView.contentDOM);
+
+    view.revealDiagnostic(0, 0);
+    expect(view.editorView.state.selection.main.head).toBe(0);
+  });
+
+  it("reveals a source location from a UTF-8 byte offset", () => {
+    const { view } = createView();
+    view.setViewData("A한🙂Z", true);
+
+    expect(view.revealByteOffset(4)).toBe(true);
+    expect(view.editorView.state.selection.main.head).toBe(2);
+    expect(view.revealByteOffset(2)).toBe(false);
+    expect(view.editorView.state.selection.main.head).toBe(2);
+    expect(view.revealByteOffset(99)).toBe(false);
+  });
+
+  it("maps an unmodified mouse selection to the exact saved UTF-8 byte offset", () => {
+    const { view, onForwardSearch } = createView();
+    view.file = { path: "book/main.typ", extension: "typ" } as never;
+    view.setViewData("A한🙂Z", true);
+
+    view.editorView.dispatch({
+      selection: { anchor: 4 },
+      userEvent: "select.pointer",
+    });
+
+    expect(onForwardSearch).toHaveBeenCalledWith({
+      sourcePath: "book/main.typ",
+      sourceText: "A한🙂Z",
+      byteOffset: 8,
+    });
+  });
+
+  it("routes a content DOM mouse gesture through CodeMirror pointer selection", async () => {
+    const { view, onForwardSearch } = createView();
+    view.file = { path: "book/main.typ", extension: "typ" } as never;
+    view.setViewData("saved", true);
+    const dispatchDocumentEvent = document.dispatchEvent.bind(document);
+    vi.spyOn(document, "dispatchEvent").mockImplementation((event) =>
+      event.type === "selectionchange" ? true : dispatchDocumentEvent(event)
+    );
+
+    view.editorView.contentDOM.dispatchEvent(new MouseEvent("mousedown", {
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+      buttons: 1,
+      clientX: 10,
+      clientY: 10,
+    }));
+    view.editorView.contentDOM.dispatchEvent(new MouseEvent("mousemove", {
+      bubbles: true,
+      buttons: 1,
+      clientX: 10,
+      clientY: 10,
+    }));
+    view.editorView.contentDOM.dispatchEvent(new MouseEvent("mouseup", {
+      bubbles: true,
+      button: 0,
+      clientX: 10,
+      clientY: 10,
+    }));
+    await Promise.resolve();
+
+    expect(onForwardSearch).toHaveBeenCalledOnce();
+    expect(onForwardSearch).toHaveBeenCalledWith({
+      sourcePath: "book/main.typ",
+      sourceText: "saved",
+      byteOffset: 5,
+    });
+  });
+
+  it("refuses a forward position inside a UTF-16 surrogate pair", () => {
+    expect(utf8ByteOffset("A🙂Z", 2)).toBeNull();
+    expect(utf8ByteOffset("A🙂Z", 3)).toBe(5);
+  });
+
+  it("ignores keyboard-only selection changes for forward search", () => {
+    const { view, onForwardSearch } = createView();
+    view.file = { path: "book/main.typ", extension: "typ" } as never;
+    view.setViewData("saved", true);
+
+    view.editorView.dispatch({
+      selection: { anchor: 2 },
+      userEvent: "select",
+    });
+
+    expect(onForwardSearch).not.toHaveBeenCalled();
+  });
+
+  it("refuses forward search while the editor buffer is dirty", () => {
+    const { view, onForwardSearch } = createView();
+    view.file = { path: "book/main.typ", extension: "typ" } as never;
+    view.setViewData("saved", true);
+    view.editorView.dispatch({ changes: { from: 5, insert: "!" } });
+
+    view.editorView.dispatch({
+      selection: { anchor: 6 },
+      userEvent: "select.pointer",
+    });
+
+    expect(onForwardSearch).not.toHaveBeenCalled();
+  });
+
+  it("re-enables forward search only after the exact editor buffer is saved", () => {
+    const { view, onForwardSearch } = createView();
+    view.file = { path: "book/main.typ", extension: "typ" } as never;
+    view.setViewData("saved", true);
+    view.editorView.dispatch({ changes: { from: 5, insert: "!" } });
+
+    expect(view.markSaved("different")).toBe(false);
+    expect(view.markSaved("saved!")).toBe(true);
+    view.editorView.dispatch({
+      selection: { anchor: 6 },
+      userEvent: "select.pointer",
+    });
+
+    expect(onForwardSearch).toHaveBeenCalledOnce();
+  });
+
+  it("reports whether the editor has unsaved changes", () => {
+    const { view } = createView();
+    view.setViewData("saved", true);
+    expect(view.hasUnsavedChanges()).toBe(false);
+    expect(view.canDiscardUncommittedOpen()).toBe(true);
+
+    view.editorView.dispatch({ changes: { from: 5, insert: "!" } });
+    expect(view.hasUnsavedChanges()).toBe(true);
+    expect(view.canDiscardUncommittedOpen()).toBe(false);
+
+    expect(view.markSaved("saved!")).toBe(true);
+    expect(view.hasUnsavedChanges()).toBe(false);
+    expect(view.canDiscardUncommittedOpen()).toBe(false);
+  });
+
+  it("destroys its CodeMirror view when closed", async () => {
+    const { view } = createView();
+    const destroy = vi.spyOn(view.editorView, "destroy");
+
+    await view.onClose();
+
+    expect(destroy).toHaveBeenCalledOnce();
+  });
+
+  it("invalidates its forward-search owner when closed", async () => {
+    const onClose = vi.fn();
+    const leaf = { app: { vault: { modify: vi.fn() } } } as unknown as WorkspaceLeaf;
+    const view = new TypstEditorView(leaf, { onClose });
+
+    await view.onClose();
+
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("cancels its queued forward search when closed before debounce", async () => {
+    vi.useFakeTimers();
+    const forward = vi.fn();
+    const scheduler = new ForwardSearchScheduler(forward);
+    const leaf = { app: { vault: { modify: vi.fn() } } } as unknown as WorkspaceLeaf;
+    const view = new TypstEditorView(leaf, {
+      onForwardSearch: (request) => scheduler.schedule(view, request),
+      onClose: () => scheduler.cancel(view),
+    });
+    view.file = { path: "book/main.typ", extension: "typ" } as never;
+    view.setViewData("saved", true);
+    view.editorView.dispatch({
+      selection: { anchor: 2 },
+      userEvent: "select.pointer",
+    });
+
+    await view.onClose();
+    await vi.advanceTimersByTimeAsync(100);
+
+    expect(forward).not.toHaveBeenCalled();
+    scheduler.dispose();
+    vi.useRealTimers();
+  });
+
+  it("cancels its in-flight forward search when closed during a vault read", async () => {
+    vi.useFakeTimers();
+    let finishRead!: () => void;
+    const read = new Promise<void>((resolve) => { finishRead = resolve; });
+    const forward = vi.fn();
+    const scheduler = new ForwardSearchScheduler(async (request, isCurrent) => {
+      await read;
+      if (isCurrent()) forward(request);
+    });
+    const leaf = { app: { vault: { modify: vi.fn() } } } as unknown as WorkspaceLeaf;
+    const view = new TypstEditorView(leaf, {
+      onForwardSearch: (request) => scheduler.schedule(view, request),
+      onClose: () => scheduler.cancel(view),
+    });
+    view.file = { path: "book/main.typ", extension: "typ" } as never;
+    view.setViewData("saved", true);
+    view.editorView.dispatch({
+      selection: { anchor: 2 },
+      userEvent: "select.pointer",
+    });
+    await vi.advanceTimersByTimeAsync(100);
+
+    await view.onClose();
+    finishRead();
+    await Promise.resolve();
+
+    expect(forward).not.toHaveBeenCalled();
+    scheduler.dispose();
+    vi.useRealTimers();
+  });
+});

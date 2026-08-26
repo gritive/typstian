@@ -1,0 +1,9 @@
+{
+  "id": "typstian",
+  "name": "Typstian",
+  "version": "0.0.1",
+  "minAppVersion": "1.13.1",
+  "description": "Edit Typst files and preview compiled documents inside Obsidian.",
+  "author": "whitekid",
+  "isDesktopOnly": true
+}

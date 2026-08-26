@@ -1,0 +1,7 @@
+main.js
+/typstian_wasm_bg.wasm
+node_modules/
+coverage/
+*.log
+.DS_Store
+.playwright-mcp/
