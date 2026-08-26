@@ -49,6 +49,14 @@ and embeds the result in `main.js`; Community releases contain only `main.js`,
 - **Protocol version is duplicated**: `PROTOCOL_VERSION` in
   `src/compiler-client.ts` and `helper/wasm/src/lib.rs`. Bump both together; the
   environment handshake rejects a mismatch.
+- **Every compile request carries the host clock.** The compiler has neither a
+  clock nor a timezone database, so `src/compile-request.ts` samples the instant
+  and the host's UTC offset and both engines send them as a required `clock`
+  field; without it `datetime.today()` fails the whole document with "unable to
+  get the current date". The worker samples once *outside* its input-fetch retry
+  loop so the date cannot shift mid-compile. `Clock` is non-optional in
+  `helper/wasm/src/lib.rs`, so a client that omits it fails deserialization —
+  that is what the protocol bump guards.
 - **Release contract**: `manifest.json` `version` must exist as a key in
   `versions.json` mapping to `minAppVersion`. `npm run release -- <patch|minor|
   major|x.y.z>` bumps every version-bearing file together, regenerates the

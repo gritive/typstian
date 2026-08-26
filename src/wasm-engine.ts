@@ -16,6 +16,7 @@ import {
   type RegisteredSystemFonts,
 } from "./system-fonts";
 import { rootedReadFile, rootedReadFileAsync } from "./wasm-vault-reader";
+import { compileRequestJson, hostClock } from "./compile-request";
 
 declare const __TYPSTIAN_WASM_BROTLI__: string | undefined;
 declare const __TYPSTIAN_WORKER_SOURCE__: string | undefined;
@@ -111,10 +112,7 @@ class InlineWasmEngine implements WasmEngine {
       ? this.readFile
       : (inputPath: string) => overlay.get(inputPath) ?? this.readFile(inputPath);
     return (await this.requireSession()).compile(
-      JSON.stringify({
-        revision: request.revision,
-        entry: request.entryPath,
-      }),
+      compileRequestJson(request, hostClock()),
       readFile,
       this.readFont,
     );

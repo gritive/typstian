@@ -1,5 +1,7 @@
 import init, { TypstianWasmSession } from "../helper/wasm/pkg/typstian_wasm.js";
 
+import { compileRequestJson, hostClock } from "./compile-request";
+
 type WorkerMethod =
   | "initialize"
   | "register-font"
@@ -225,11 +227,16 @@ async function compile(
     );
   }
 
+  // The retry loop below recompiles the same revision until every input is
+  // present, so the instant is captured once: `datetime.today()` must not
+  // shift mid-compile.
+  const clock = hostClock();
+
   while (true) {
     missing.clear();
     missingFonts.clear();
     const result: unknown = activeSession.compile(
-      JSON.stringify({ revision: request.revision, entry: request.entryPath }),
+      compileRequestJson(request, clock),
       readFile,
       readFont,
     );

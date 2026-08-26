@@ -15,6 +15,15 @@ import {
 
 const fixtureRoot = path.resolve("helper/tests/fixtures/project");
 
+function localDate(value: Date): string {
+  const month = String(value.getMonth() + 1).padStart(2, "0");
+  const day = String(value.getDate()).padStart(2, "0");
+  return `${value.getFullYear()}-${month}-${day}`;
+}
+
+function utcDate(value: Date): string {
+  return value.toISOString().slice(0, 10);
+}
 
 describe("bundled Typstian WASM engine", () => {
 it("loads embedded Brotli WASM without a release-side asset", { timeout: 15_000 }, async () => {
@@ -57,7 +66,7 @@ it("loads embedded Brotli WASM without a release-side asset", { timeout: 15_000 
         for (const response of responses) {
           expect(JSON.parse(response)).toEqual({
             type: "environment",
-            protocolVersion: 1,
+            protocolVersion: 2,
             typstVersion: "0.15.1",
           });
         }
@@ -81,6 +90,39 @@ it("compiles an equation with the embedded math face", async () => {
       // Operating systems do not ship a math face, so without the embedded one
       // Typst fails the whole compile with "no font could be found".
       expect(result.ok).toBe(true);
+    } finally {
+      client.close();
+    }
+  });
+
+it("resolves datetime.today() to the host's own local date", async () => {
+    const client = new TypstianCompilerClient({
+      rootPath: fixtureRoot,
+      wasmPath: path.resolve("helper/wasm/pkg/typstian_wasm_bg.wasm"),
+    });
+    try {
+      // The date is read on both sides of the compile so a midnight rollover
+      // widens the expectation instead of failing the run.
+      const now = new Date();
+      const tomorrow = new Date(now.getTime() + 86_400_000);
+      const source = [
+        `#let local = datetime.today().display("[year]-[month]-[day]")`,
+        `#let utc = datetime.today(offset: 0).display("[year]-[month]-[day]")`,
+        `#assert(local == "${localDate(now)}" or local == "${localDate(tomorrow)}",`,
+        `  message: "local: " + local)`,
+        `#assert(utc == "${utcDate(now)}" or utc == "${utcDate(tomorrow)}",`,
+        `  message: "utc: " + utc)`,
+        `Dated`,
+      ].join("\n");
+      const result = await client.compile({
+        revision: 1,
+        entryPath: "today.typ",
+        overlay: new Map([["today.typ", new TextEncoder().encode(source)]]),
+      });
+
+      // A wrong offset sign would shift the local date by twice the host's
+      // offset, which no fixed expectation on the Rust side can catch.
+      expect(result.ok, result.ok ? "" : JSON.stringify(result)).toBe(true);
     } finally {
       client.close();
     }
@@ -120,7 +162,7 @@ it("embeds a Korean glyph", async () => {
     });
     try {
       const environment = await client.checkEnvironment();
-      expect(environment).toEqual({ protocolVersion: 1, typstVersion: "0.15.1" });
+      expect(environment).toEqual({ protocolVersion: 2, typstVersion: "0.15.1" });
 
       const result = await client.compile({ revision: 1, entryPath: "main.typ" });
       expect(result.ok).toBe(true);

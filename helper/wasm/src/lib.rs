@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex, OnceLock, RwLock};
 
 use base64::Engine;
 use serde::{Deserialize, Serialize};
+use time::{OffsetDateTime, UtcOffset};
 use typst::Library;
 use typst::diag::{FileError, FileResult, Severity, SourceDiagnostic};
 use typst::foundations::{Bytes, Datetime, Duration};
@@ -28,7 +29,7 @@ use wasm_bindgen::prelude::*;
 /// keeps `main.js` far smaller than embedding the full typst-assets font set.
 const EMBEDDED_MATH_FONT: &[u8] = include_bytes!("../assets/NewCMMath-Book.otf");
 
-const PROTOCOL_VERSION: u32 = 1;
+const PROTOCOL_VERSION: u32 = 2;
 const TYPST_VERSION: &str = "0.15.1";
 const MAX_VAULT_FILE_BYTES: usize = 50 * 1024 * 1024;
 const MAX_TOTAL_INPUT_BYTES: usize = 70 * 1024 * 1024;
@@ -37,6 +38,42 @@ const MAX_DEPENDENCIES: usize = 10_000;
 const MAX_FONT_FILE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_FONT_FACES: usize = 20_000;
 const MAX_FONT_PATH_BYTES: usize = 4_096;
+
+/// The host's wall clock at the start of a compile. The compiler has neither a
+/// clock nor a timezone database of its own, so the host samples both the
+/// instant and its own UTC offset; sampling them once per compile also keeps
+/// `datetime.today()` stable across the input-fetch retries of a single
+/// revision.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Clock {
+    /// Milliseconds since the Unix epoch, UTC.
+    pub now_ms: i64,
+    /// Minutes to add to UTC to reach the host's local time.
+    pub local_offset_minutes: i32,
+}
+
+impl Clock {
+    fn today(&self, offset: Option<Duration>) -> Option<Datetime> {
+        let offset_seconds = match offset {
+            None => self.local_offset_minutes.checked_mul(60)?,
+            Some(offset) => {
+                let seconds = offset.seconds().trunc();
+                // `as` saturates and turns NaN into zero, so screen the value
+                // before casting; `UtcOffset` then rejects anything a whole day
+                // or more from UTC, as typst-kit's own `today` does.
+                if !seconds.is_finite() || seconds.abs() >= 86_400.0 {
+                    return None;
+                }
+                seconds as i32
+            }
+        };
+        let local = OffsetDateTime::from_unix_timestamp(self.now_ms.div_euclid(1_000))
+            .ok()?
+            .to_offset(UtcOffset::from_whole_seconds(offset_seconds).ok()?);
+        Datetime::from_ymd(local.year(), u8::from(local.month()), local.day())
+    }
+}
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -50,6 +87,7 @@ pub struct FileInput {
 pub struct CompileRequest {
     pub entry: String,
     pub revision: u64,
+    pub clock: Clock,
     pub files: Vec<FileInput>,
 }
 
@@ -103,6 +141,7 @@ impl FontSource for HostFontSource {
 
 struct InMemoryWorld {
     main: FileId,
+    clock: Clock,
     library: LazyHash<Library>,
     fonts: FontStore,
     loader: Loader,
@@ -119,6 +158,7 @@ struct InputCache {
 impl InMemoryWorld {
     fn new(
         entry: &str,
+        clock: Clock,
         loader: Loader,
         registered_fonts: &[RegisteredFont],
         font_loader: FontLoader,
@@ -148,6 +188,7 @@ impl InMemoryWorld {
         }
         Ok(Self {
             main,
+            clock,
             library: LazyHash::new(Library::builder().build()),
             fonts,
             loader,
@@ -263,8 +304,8 @@ impl World for InMemoryWorld {
         self.fonts.font(index)
     }
 
-    fn today(&self, _offset: Option<Duration>) -> Option<Datetime> {
-        None
+    fn today(&self, offset: Option<Duration>) -> Option<Datetime> {
+        self.clock.today(offset)
     }
 }
 
@@ -414,6 +455,7 @@ impl Session {
         let mut result = self.compile_with_loader(
             request.entry,
             request.revision,
+            request.clock,
             Box::new(move |path| {
                 files
                     .get(path)
@@ -432,6 +474,7 @@ impl Session {
         &mut self,
         entry: String,
         revision: u64,
+        clock: Clock,
         loader: Loader,
         font_loader: FontLoader,
     ) -> Result<CompileResult, String> {
@@ -441,7 +484,7 @@ impl Session {
             .map_err(|_| "system font catalog lock poisoned".to_string())?
             .fonts
             .clone();
-        let world = InMemoryWorld::new(&entry, loader, &registered_fonts, font_loader)?;
+        let world = InMemoryWorld::new(&entry, clock, loader, &registered_fonts, font_loader)?;
         let result = typst::compile::<PagedDocument>(&world);
         let mut diagnostics = result
             .warnings
@@ -602,6 +645,7 @@ impl Session {
 struct WasmCompileRequest {
     entry: String,
     revision: u64,
+    clock: Clock,
 }
 
 #[wasm_bindgen]
@@ -649,6 +693,7 @@ impl TypstianWasmSession {
             .compile_with_loader(
                 request.entry,
                 request.revision,
+                request.clock,
                 Box::new(move |path| {
                     let value = read_file
                         .call1(&JsValue::NULL, &JsValue::from_str(path))
@@ -779,6 +824,10 @@ mod font_tests {
             .compile_with_loader(
                 "main.typ".into(),
                 8,
+                Clock {
+                    now_ms: 0,
+                    local_offset_minutes: 0,
+                },
                 Box::new(move |path| {
                     (path == "main.typ")
                         .then(|| source.clone())
@@ -823,5 +872,86 @@ mod resource_limit_tests {
     fn rejects_pdf_before_base64_expansion() {
         assert!(ensure_pdf_size(MAX_PDF_BYTES + 1).is_err());
         assert!(ensure_pdf_size(MAX_PDF_BYTES).is_ok());
+    }
+}
+
+#[cfg(test)]
+mod clock_tests {
+    use super::*;
+
+    fn hours(count: f64) -> Duration {
+        Duration::from(time::Duration::seconds((count * 3600.0) as i64))
+    }
+
+    #[test]
+    fn resolves_the_local_date_when_no_offset_is_requested() {
+        // 2026-08-26T22:30:00Z: the 27th nine hours ahead of UTC, and still the
+        // 26th nine hours behind, so a flipped sign fails here.
+        let clock = Clock {
+            now_ms: 1_787_783_400_000,
+            local_offset_minutes: 9 * 60,
+        };
+        assert_eq!(clock.today(None), Datetime::from_ymd(2026, 8, 27));
+    }
+
+    #[test]
+    fn applies_a_requested_offset_instead_of_the_local_one() {
+        // 2026-08-26T22:30:00Z: still the 26th in UTC, the 27th at UTC+9.
+        let clock = Clock {
+            now_ms: 1_787_783_400_000,
+            local_offset_minutes: 0,
+        };
+        assert_eq!(
+            clock.today(Some(hours(0.0))),
+            Datetime::from_ymd(2026, 8, 26)
+        );
+        assert_eq!(
+            clock.today(Some(hours(9.0))),
+            Datetime::from_ymd(2026, 8, 27)
+        );
+        assert_eq!(
+            clock.today(Some(hours(-23.0))),
+            Datetime::from_ymd(2026, 8, 25)
+        );
+    }
+
+    #[test]
+    fn resolves_dates_before_the_epoch_and_across_leap_days() {
+        let leap = Clock {
+            // 2024-02-29T00:00:00Z
+            now_ms: 1_709_164_800_000,
+            local_offset_minutes: 0,
+        };
+        assert_eq!(leap.today(None), Datetime::from_ymd(2024, 2, 29));
+
+        let before_epoch = Clock {
+            // 1969-12-31T23:00:00Z
+            now_ms: -3_600_000,
+            local_offset_minutes: 0,
+        };
+        assert_eq!(before_epoch.today(None), Datetime::from_ymd(1969, 12, 31));
+
+        // One millisecond before the epoch still belongs to 1969: the seconds
+        // must floor, not truncate toward zero.
+        let just_before_epoch = Clock {
+            now_ms: -1,
+            local_offset_minutes: 0,
+        };
+        assert_eq!(
+            just_before_epoch.today(None),
+            Datetime::from_ymd(1969, 12, 31)
+        );
+    }
+
+    #[test]
+    fn rejects_an_offset_that_cannot_be_a_timezone() {
+        let clock = Clock {
+            now_ms: 0,
+            local_offset_minutes: 0,
+        };
+        assert_eq!(clock.today(Some(hours(24.0))), None);
+        assert_eq!(clock.today(Some(hours(-24.0))), None);
+        assert_eq!(clock.today(Some(hours(f64::from(i32::MAX)))), None);
+        assert!(clock.today(Some(hours(23.0))).is_some());
     }
 }

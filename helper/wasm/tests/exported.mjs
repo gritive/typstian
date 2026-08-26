@@ -11,7 +11,7 @@ await init({ module_or_path: wasm });
 
 const session = new TypstianWasmSession();
 const environment = JSON.parse(session.environment());
-if (environment.protocolVersion !== 1 || environment.typstVersion !== "0.15.1") {
+if (environment.protocolVersion !== 2 || environment.typstVersion !== "0.15.1") {
   throw new Error(`unexpected environment: ${session.environment()}`);
 }
 
@@ -26,9 +26,14 @@ const readFile = (relativePath) => {
   }
 };
 
+// 2026-08-26T14:30:00Z at UTC+9, fixed so the exported surface stays
+// reproducible.
+const clock = { nowMs: 1_787_754_600_000, localOffsetMinutes: 9 * 60 };
+
 const compiled = session.compile(JSON.stringify({
   entry: "main.typ",
   revision: 11,
+  clock,
 }), readFile);
 if (
   typeof compiled !== "object"
@@ -95,6 +100,7 @@ const invalidSource = new TextEncoder().encode("#let =");
 const compileError = JSON.parse(invalidSession.compile(JSON.stringify({
   entry: "invalid.typ",
   revision: 12,
+  clock,
 }), (relativePath) => relativePath === "invalid.typ" ? invalidSource : undefined));
 if (compileError.type !== "error"
   || compileError.requestType !== "compile"

@@ -2,7 +2,15 @@ use base64::Engine;
 use typstian_core::{
     ClickRequest, ClickResponse, ForwardRequest, ForwardResponse, PageDimensions, RenderedPosition,
 };
-use typstian_wasm::{CompileRequest, FileInput, Session};
+use typstian_wasm::{Clock, CompileRequest, FileInput, Session};
+
+/// 2026-08-26T22:30:00Z at UTC+9, where the local date (the 27th) differs from
+/// the UTC one (the 26th) so an ignored or inverted offset cannot pass. Fixed so
+/// compiles stay reproducible.
+const CLOCK: Clock = Clock {
+    now_ms: 1_787_783_400_000,
+    local_offset_minutes: 9 * 60,
+};
 
 fn fixture(group: &str, path: &str) -> FileInput {
     let bytes = std::fs::read(format!("../tests/fixtures/{group}/{path}")).unwrap();
@@ -18,6 +26,7 @@ fn file_input(path: &str, bytes: &[u8]) -> FileInput {
 
 fn project_request(revision: u64) -> CompileRequest {
     CompileRequest {
+        clock: CLOCK,
         entry: "main.typ".into(),
         revision,
         files: vec![
@@ -156,6 +165,7 @@ fn maps_compile_error_to_exact_source_location() {
     let mut session = Session::new();
     let result = session
         .compile(CompileRequest {
+            clock: CLOCK,
             entry: "invalid.typ".into(),
             revision: 11,
             files: vec![fixture("diagnostics", "invalid.typ")],
@@ -176,6 +186,7 @@ fn maps_diagnostic_column_as_utf16_for_javascript_clients() {
     let mut session = Session::new();
     let result = session
         .compile(CompileRequest {
+            clock: CLOCK,
             entry: "astral.typ".into(),
             revision: 14,
             files: vec![fixture("diagnostics", "astral.typ")],
@@ -192,6 +203,7 @@ fn rejects_image_outside_virtual_root() {
     let mut session = Session::new();
     let result = session
         .compile(CompileRequest {
+            clock: CLOCK,
             entry: "image.typ".into(),
             revision: 4,
             files: vec![fixture("escape/vault", "image.typ")],
@@ -212,6 +224,7 @@ fn rejects_package_import_without_network_resolution() {
     let mut session = Session::new();
     let result = session
         .compile(CompileRequest {
+            clock: CLOCK,
             entry: "package.typ".into(),
             revision: 5,
             files: vec![fixture("escape/vault", "package.typ")],
@@ -240,6 +253,7 @@ fn click_uses_retained_snapshot_after_source_input_changes() {
     let mut session = Session::new();
     session
         .compile(CompileRequest {
+            clock: CLOCK,
             entry: "main.typ".into(),
             revision: 17,
             files: vec![main, mutable_input.clone(), asset],
@@ -256,4 +270,30 @@ fn click_uses_retained_snapshot_after_source_input_changes() {
         before,
         ClickResponse::Source { path, .. } if path == "section.typ"
     ));
+}
+
+#[test]
+fn resolves_the_current_date_from_the_host_clock() {
+    let source = "#assert.eq(datetime.today().display(\"[year]-[month]-[day]\"), \"2026-08-27\")\n\
+                  #assert.eq(datetime.today(offset: 0).display(\"[year]-[month]-[day]\"), \"2026-08-26\")\n\
+                  Dated";
+    let compiled = Session::new()
+        .compile(CompileRequest {
+            clock: CLOCK,
+            entry: "main.typ".into(),
+            revision: 1,
+            files: vec![file_input("main.typ", source.as_bytes())],
+        })
+        .expect("compile succeeds");
+
+    assert_eq!(
+        compiled
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.severity == "error")
+            .map(|diagnostic| diagnostic.message.as_str())
+            .collect::<Vec<_>>(),
+        Vec::<&str>::new()
+    );
+    assert!(compiled.pdf_bytes > 0);
 }
