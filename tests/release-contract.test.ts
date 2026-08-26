@@ -66,6 +66,7 @@ describe("release contract", () => {
     const workflow = fs.readFileSync(workflowPath, "utf8");
     const esbuildConfig = fs.readFileSync(path.join(root, "esbuild.config.mjs"), "utf8");
     const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
+    const contributing = fs.readFileSync(path.join(root, "CONTRIBUTING.md"), "utf8");
     const agents = fs.readFileSync(path.join(root, "AGENTS.md"), "utf8");
     const claude = fs.readFileSync(path.join(root, "CLAUDE.md"), "utf8");
     const adr = fs.readFileSync(
@@ -110,15 +111,23 @@ describe("release contract", () => {
       "Copy `main.js`, `typstian_wasm_bg.wasm`",
     );
     expect(readme).not.toContain("hard timeout");
-    expect(readme).toContain("npm run release");
-    expect(readme).not.toContain("draft");
+    // README.md is the plugin's Community directory description, so it carries
+    // only what a user needs; building and releasing live in CONTRIBUTING.md.
+    for (const developerOnly of [
+      "npm run release",
+      "npm run build:wasm",
+      "wasm-pack",
+      "draft",
+    ]) {
+      expect(readme).not.toContain(developerOnly);
+    }
     expect(workflow).not.toContain("--draft");
     expect(workflow).toContain("--generate-notes");
-    expect(readme).not.toContain("Make the GitHub repository public");
-    expect(readme).toContain("community.obsidian.md/plugins/typstian");
-    expect(readme).toContain("Rust 1.92 or newer");
-    expect(readme).toContain("Release CI uses Rust 1.98.0");
-    expect(readme).not.toContain("Rust 1.85 or newer");
+    expect(contributing).toContain("npm run release");
+    expect(contributing).toContain("community.obsidian.md/plugins/typstian");
+    expect(contributing).toContain("Rust 1.92 or newer");
+    expect(contributing).toContain("Release CI uses Rust 1.98.0");
+    expect(contributing).not.toContain("Rust 1.85 or newer");
     expect(workflow).toContain("rustup toolchain install 1.98.0");
     expect(readme).toContain(
       "complete third-party license and attribution notices",

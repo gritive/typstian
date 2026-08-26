@@ -1,8 +1,9 @@
 # Typstian
 
 Obsidian desktop plugin (TypeScript) with a bundled Rust-to-WASM Typst compiler.
-User-facing docs live in `README.md`; this file records what is not obvious from
-the code.
+`README.md` is the plugin's description in Obsidian's Community directory, so it
+carries only what a user needs; building, testing, and releasing live in
+`CONTRIBUTING.md`. This file records what is not obvious from the code.
 
 ## Commands
 
@@ -54,8 +55,9 @@ and embeds the result in `main.js`; Community releases contain only `main.js`,
   notices, runs the gates, then commits, tags, and pushes.
   `tests/release-contract.test.ts` also guards the embedded WASM and third-party
   notices, pinned release workflow, checked-in WASM glue/artifact, `styles.css`,
-  and the README paragraphs answering the community review's filesystem and
-  dynamic-execution findings.
+  the README paragraphs answering the community review's filesystem and
+  dynamic-execution findings, and the split that keeps developer instructions in
+  `CONTRIBUTING.md` rather than the README.
 - **Typst crates are pinned `=0.15.1`** (`typst`, `typst-ide`, `typst-kit`,
   `typst-layout`, `typst-pdf`). They move together; do not bump one alone.
 - **esbuild externals**: `obsidian`, `electron`, node builtins, and every
