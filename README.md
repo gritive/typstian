@@ -33,7 +33,9 @@ enable another plugin that registers the `.typ` extension in the same vault.
 
 ## Publish a Community release
 
-Make the GitHub repository public, then run the release script from a clean
+Typstian is listed in the Community directory as
+[typstian](https://community.obsidian.md/plugins/typstian); a published GitHub
+release is what the directory serves. Run the release script from a clean
 checkout that matches its remote branch:
 
 ```sh
@@ -49,8 +51,8 @@ Rust sources, reruns those gates, attests `main.js`, `manifest.json`, and
 `styles.css`, and publishes a GitHub release containing those three files with
 generated notes.
 
-Submit the plugin to the Community directory only after the matching release is
-published.
+Obsidian picks the release up from `manifest.json` and `versions.json`, and
+only a published release reaches users.
 
 ## Use
 

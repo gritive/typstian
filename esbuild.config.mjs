@@ -22,14 +22,16 @@ const external = [
   "@lezer/lr"
 ];
 
-const wasmBrotliBase64 = brotliCompressSync(
-  await readFile("helper/wasm/pkg/typstian_wasm_bg.wasm"),
-  {
-    params: {
-      [zlibConstants.BROTLI_PARAM_QUALITY]: 6,
-    },
+// The compressed module is the bulk of main.js, so a release build pays the
+// slow maximum-quality pass; watch builds keep the fast default.
+const wasmBytes = await readFile("helper/wasm/pkg/typstian_wasm_bg.wasm");
+const wasmBrotliBase64 = brotliCompressSync(wasmBytes, {
+  params: {
+    [zlibConstants.BROTLI_PARAM_QUALITY]: production ? 11 : 6,
+    [zlibConstants.BROTLI_PARAM_LGWIN]: 24,
+    [zlibConstants.BROTLI_PARAM_SIZE_HINT]: wasmBytes.byteLength,
   },
-).toString("base64");
+}).toString("base64");
 
 const workerBuild = await esbuild.build({
   entryPoints: ["src/wasm-worker.ts"],

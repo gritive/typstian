@@ -7,6 +7,12 @@ license = "MIT"
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+# rustc targets a newer WebAssembly feature set than wasm-pack's bundled
+# wasm-opt enables by default, so validation needs -all. -Oz optimizes the
+# module for size, which is what the base64 payload in main.js pays for.
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = ["-Oz", "-all"]
+
 [dependencies]
 base64 = "0.22"
 js-sys = "0.3"
@@ -19,3 +25,12 @@ typst-layout = "=0.15.1"
 typst-pdf = "=0.15.1"
 typstian-core = { path = ".." }
 wasm-bindgen = "0.2"
+
+# The compiled module ships base64-encoded inside main.js, so the release build
+# is tuned for size rather than compile time.
+[profile.release]
+opt-level = "z"
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true

@@ -113,7 +113,8 @@ describe("release contract", () => {
     expect(readme).not.toContain("draft");
     expect(workflow).not.toContain("--draft");
     expect(workflow).toContain("--generate-notes");
-    expect(readme).toContain("Make the GitHub repository public");
+    expect(readme).not.toContain("Make the GitHub repository public");
+    expect(readme).toContain("community.obsidian.md/plugins/typstian");
     expect(readme).toContain("Rust 1.92 or newer");
     expect(readme).toContain("Release CI uses Rust 1.98.0");
     expect(readme).not.toContain("Rust 1.85 or newer");

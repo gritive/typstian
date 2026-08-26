@@ -16,20 +16,17 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly __wbg_typstianwasmsession_free: (a: number, b: number) => void;
-    readonly typstianwasmsession_compile: (a: number, b: number, c: number, d: any, e: any) => [number, number, number];
-    readonly typstianwasmsession_environment: (a: number) => [number, number];
-    readonly typstianwasmsession_forward: (a: number, b: number, c: number) => [number, number, number, number];
-    readonly typstianwasmsession_jump: (a: number, b: number, c: number) => [number, number, number, number];
+    readonly typstianwasmsession_compile: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
+    readonly typstianwasmsession_environment: (a: number, b: number) => void;
+    readonly typstianwasmsession_forward: (a: number, b: number, c: number, d: number) => void;
+    readonly typstianwasmsession_jump: (a: number, b: number, c: number, d: number) => void;
     readonly typstianwasmsession_new: () => number;
-    readonly typstianwasmsession_register_font: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
-    readonly __wbindgen_exn_store: (a: number) => void;
-    readonly __externref_table_alloc: () => number;
-    readonly __wbindgen_externrefs: WebAssembly.Table;
-    readonly __wbindgen_malloc: (a: number, b: number) => number;
-    readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
-    readonly __externref_table_dealloc: (a: number) => void;
-    readonly __wbindgen_free: (a: number, b: number, c: number) => void;
-    readonly __wbindgen_start: () => void;
+    readonly typstianwasmsession_register_font: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
+    readonly __wbindgen_export: (a: number) => void;
+    readonly __wbindgen_add_to_stack_pointer: (a: number) => number;
+    readonly __wbindgen_export2: (a: number, b: number) => number;
+    readonly __wbindgen_export3: (a: number, b: number, c: number, d: number) => number;
+    readonly __wbindgen_export4: (a: number, b: number, c: number) => void;
 }
 
 export type SyncInitInput = BufferSource | WebAssembly.Module;
