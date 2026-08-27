@@ -179,3 +179,11 @@
   text-align: left;
   white-space: normal;
 }
+
+.typstian-setting-status:not(:empty) {
+  margin-top: var(--size-2-1);
+}
+
+.typstian-setting-status.is-invalid {
+  color: var(--text-error);
+}

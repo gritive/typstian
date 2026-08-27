@@ -1,32 +1,126 @@
 import fs from "node:fs";
 import path from "node:path";
 
-function relativePathWithin(root: string, candidate: string): string | null {
-  const relative = path.relative(path.resolve(root), path.resolve(candidate));
-  if (
-    relative.length === 0
-    || path.isAbsolute(relative)
+function escapesRoot(root: string, candidate: string): boolean {
+  const relative = path.relative(root, candidate);
+  return (
+    path.isAbsolute(relative)
     || relative === ".."
     || relative.startsWith(`..${path.sep}`)
-  ) {
+  );
+}
+
+function relativePathWithin(root: string, candidate: string): string | null {
+  const resolvedRoot = path.resolve(root);
+  const resolved = path.resolve(candidate);
+  const relative = path.relative(resolvedRoot, resolved);
+  if (relative.length === 0 || escapesRoot(resolvedRoot, resolved)) {
     return null;
   }
   return relative;
 }
 
-export function resolveCompilationRoot(vaultRoot: string, rootPath: string): string {
-  const canonicalVault = fs.realpathSync.native(vaultRoot);
-  const canonicalRoot = fs.realpathSync.native(path.resolve(canonicalVault, rootPath));
-  const relative = path.relative(canonicalVault, canonicalRoot);
-  if (
-    path.isAbsolute(relative)
-    || relative === ".."
-    || relative.startsWith(`..${path.sep}`)
-    || !fs.statSync(canonicalRoot).isDirectory()
-  ) {
-    throw new Error("Compilation root must resolve inside the vault.");
+export type CompilationRootProblem =
+  | "outside-vault"
+  | "not-a-folder"
+  | "missing"
+  | "broken-link"
+  | "unreadable";
+
+export type CompilationRootCheck =
+  | { readonly ok: true; readonly path: string }
+  // A refusal the filesystem raised is carried along, because "must resolve
+  // inside the vault" would misname a folder that merely does not exist yet.
+  | { readonly ok: false; readonly reason: CompilationRootProblem; readonly error?: Error };
+
+// Only reached once canonicalization has failed, which is why it may spend two
+// more filesystem calls: realpath cannot say whether nothing is there or a link
+// is there pointing at nothing, and the two need different advice.
+function classifyUnresolvable(
+  vaultRoot: string,
+  candidate: string,
+  error: NodeJS.ErrnoException
+): CompilationRootCheck {
+  let link: fs.Stats;
+  try {
+    link = fs.lstatSync(candidate);
+  } catch {
+    return { ok: false, reason: error.code === "ENOENT" ? "missing" : "unreadable", error };
   }
-  return canonicalRoot;
+  if (!link.isSymbolicLink()) {
+    // Something is here that realpath still refused: permissions, or a loop
+    // further along a path component.
+    return { ok: false, reason: "unreadable", error };
+  }
+  // A link out of the vault is an escape whatever state its target is in —
+  // creating that target would only make the escape reachable. One level is
+  // enough: a longer chain leaves the vault through a link this same check sees
+  // when the user points the setting at it.
+  const target = path.resolve(path.dirname(candidate), fs.readlinkSync(candidate));
+  const canonicalTarget = path.join(canonicalOrSelf(path.dirname(target)), path.basename(target));
+  if (escapesRoot(canonicalOrSelf(vaultRoot), canonicalTarget)) {
+    return { ok: false, reason: "outside-vault", error };
+  }
+  // The link is here and points inside the vault, so realpath's own code says
+  // whether the chain ends nowhere or the filesystem refused it (a loop, say).
+  return {
+    ok: false,
+    reason: error.code === "ENOENT" ? "broken-link" : "unreadable",
+    error
+  };
+}
+
+function canonicalOrSelf(directory: string): string {
+  try {
+    return fs.realpathSync.native(directory);
+  } catch {
+    return directory;
+  }
+}
+
+/**
+ * The one policy that decides whether a compilation root setting is usable.
+ * It reports *why* an unusable value fails so the settings tab can say so while
+ * the user is still looking at the field, instead of leaving it to a notice on
+ * some later action.
+ */
+export function checkCompilationRoot(vaultRoot: string, rootPath: string): CompilationRootCheck {
+  // The escape is decided lexically first, so `../notes` is named for leaving
+  // the vault rather than for not existing yet — creating it would not help.
+  const resolvedVault = path.resolve(vaultRoot);
+  const resolvedRoot = path.resolve(resolvedVault, rootPath);
+  if (escapesRoot(resolvedVault, resolvedRoot)) {
+    return { ok: false, reason: "outside-vault" };
+  }
+
+  let canonicalVault: string;
+  let canonicalRoot: string;
+  let stats: fs.Stats;
+  try {
+    canonicalVault = fs.realpathSync.native(resolvedVault);
+    canonicalRoot = fs.realpathSync.native(resolvedRoot);
+    stats = fs.statSync(canonicalRoot);
+  } catch (error) {
+    return classifyUnresolvable(resolvedVault, resolvedRoot, error as NodeJS.ErrnoException);
+  }
+
+  // Re-checked after canonicalization: a symlink that sits inside the vault can
+  // still point out of it, and only realpath can tell.
+  if (escapesRoot(canonicalVault, canonicalRoot)) {
+    return { ok: false, reason: "outside-vault" };
+  }
+  if (!stats.isDirectory()) {
+    return { ok: false, reason: "not-a-folder" };
+  }
+  return { ok: true, path: canonicalRoot };
+}
+
+export function resolveCompilationRoot(vaultRoot: string, rootPath: string): string {
+  const check = checkCompilationRoot(vaultRoot, rootPath);
+  if (check.ok) return check.path;
+  // Whatever the filesystem itself refused keeps its own error; only a value the
+  // policy alone rejects gets the policy's message.
+  throw check.error ?? new Error("Compilation root must resolve inside the vault.");
 }
 
 export function resolveDiagnosticVaultPath(

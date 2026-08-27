@@ -38,7 +38,8 @@ install it, and enable it. Do not enable another plugin that registers the
 2. Edit it in the Typst source view.
 3. Run **Typstian: Open Typst preview** from the command palette. It is listed
    only while a Typst file is the active editor, so open one first.
-4. Use the preview toolbar to zoom or fit pages to the available width.
+4. Use the preview toolbar to zoom, fit pages to the available width, or save
+   the compiled PDF into the vault.
 5. Click rendered preview text to jump to the exact Typst source byte offset.
    Dragging still selects text for copying; links and controls keep their normal behavior.
 6. In a saved `.typ` editor, click or move the selection with the mouse to reveal
@@ -51,10 +52,13 @@ select one to open its `.typ` file and move the cursor to the reported location.
 The command **Typstian: Check Typst environment** reports the embedded Typst
 version and compilation root.
 
-The command **Typstian: Save the compiled PDF to the vault** compiles the active
-`.typ` file, unsaved text included, and writes the PDF beside it under the same
-name. An existing file is never overwritten: the PDF lands on the next free
-`name-1.pdf`, `name-2.pdf`, and so on, and the notice names the file it wrote.
+The preview toolbar's **Save** button and the command
+**Typstian: Save the compiled PDF to the vault** both compile a `.typ` file,
+unsaved text included, and write the PDF beside it under the same name. The
+button saves the file its preview is following; the command saves the active
+editor's file.
+An existing file is never overwritten: the PDF lands on the next free `name-1.pdf`,
+`name-2.pdf`, and so on, and the notice names the file it wrote.
 Creating a Typst file and saving a PDF are the only two places Typstian writes
 to your vault, and both happen only when you ask for them.
 
@@ -72,7 +76,9 @@ is dropped and the newest text compiles as soon as the running compile finishes.
 ## Settings
 
 - **Compilation root**: optional path inside the vault; defaults to the vault
-  root.
+  root. The setting reports whether what you typed resolves to a folder inside
+  the vault. A path that does not is still saved, so you can point it at a
+  folder before creating it.
 
 Typstian embeds one font — New Computer Modern Math, Typst's default math face.
 Every text face comes from your system's standard macOS, Windows, or Linux font
@@ -140,11 +146,13 @@ directory on each device works normally.
 ## Current scope
 
 Typstian does not provide mobile support, hover, rename, go-to-definition,
-formatting, semantic tokens, rotated-page inverse search, glyph-exact forward
-round-tripping, or Tinymist's custom preview protocol. Completion and PDF export
-are new and narrow: completions come from the last compiled snapshot, and the
-export writes one PDF beside the source on request. Syntax highlighting comes from
-the experimental `codemirror-lang-typst` 0.6.0 Lezer grammar for Typst 0.15.
+formatting, semantic tokens, or Tinymist's custom preview protocol. Clicking a
+rotated page does not jump to the source that produced it. Moving the cursor
+reveals the spot the surrounding source produced rather than the exact glyph
+under the cursor, and some cursor positions reveal nothing at all.
+Completion and PDF export are new and narrow: completions come from the last
+compiled snapshot, and the export writes one PDF beside the source on request.
+Syntax highlighting comes from the experimental `codemirror-lang-typst` 0.6.0 Lezer grammar for Typst 0.15.
 
 ## Contributing
 
