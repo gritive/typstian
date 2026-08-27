@@ -767,6 +767,36 @@ describe("system font loading", () => {
     }
   });
 
+
+  it("observes cancellation while discovering directories", async () => {
+    const controller = new AbortController();
+    const realpath = vi.spyOn(fs.promises, "realpath").mockImplementation(async (file) =>
+      file.toString()
+    );
+    const readdir = vi.spyOn(fs.promises, "readdir").mockImplementation(async () => {
+      if (readdir.mock.calls.length === 1) {
+        controller.abort();
+        return [{
+          name: "nested",
+          isDirectory: () => true,
+          isFile: () => false,
+          isSymbolicLink: () => false,
+        }] as fs.Dirent[];
+      }
+      return [];
+    });
+
+    try {
+      await expect(
+        registerSystemFonts(["/virtual/root"], vi.fn(), controller.signal),
+      ).rejects.toMatchObject({ name: "AbortError" });
+      expect(readdir).toHaveBeenCalledOnce();
+    } finally {
+      realpath.mockRestore();
+      readdir.mockRestore();
+    }
+  });
+
   it("skips oversized and invalid fonts and denies unregistered paths", async () => {
     const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "typstian-font-"));
     try {

@@ -32,6 +32,7 @@ interface DiscoveredFont {
 
 async function discoverFontFiles(
   directories: readonly string[],
+  signal?: AbortSignal,
 ): Promise<DiscoveredFont[]> {
   // The root index travels with each directory so the residency plan can rank
   // the user's own font directories ahead of the ones the OS ships.
@@ -44,15 +45,19 @@ async function discoverFontFiles(
     fonts.size < MAX_SYSTEM_FONT_FILES &&
     visitedDirectories.size < MAX_SYSTEM_FONT_FILES
   ) {
+    throwIfAborted(signal);
     const next = pending.shift();
     if (!next) break;
     try {
       const canonicalDirectory = await fs.promises.realpath(next.directory);
+      throwIfAborted(signal);
       if (visitedDirectories.has(canonicalDirectory)) continue;
       visitedDirectories.add(canonicalDirectory);
       const entries = await fs.promises.readdir(canonicalDirectory, { withFileTypes: true });
+      throwIfAborted(signal);
       entries.sort((left, right) => left.name.localeCompare(right.name));
       for (const entry of entries) {
+        throwIfAborted(signal);
         const candidate = path.join(canonicalDirectory, entry.name);
         if (entry.isDirectory()) {
           pending.push({ directory: candidate, root: next.root });
@@ -62,13 +67,16 @@ async function discoverFontFiles(
         if (!FONT_EXTENSIONS.has(path.extname(entry.name).toLowerCase())) continue;
         try {
           const canonicalFont = await fs.promises.realpath(candidate);
+          throwIfAborted(signal);
           if (!fonts.has(canonicalFont)) fonts.set(canonicalFont, next.root);
           if (fonts.size >= MAX_SYSTEM_FONT_FILES) break;
         } catch {
+          throwIfAborted(signal);
           // Broken and disappearing font links are skipped.
         }
       }
     } catch {
+      throwIfAborted(signal);
       // Unreadable and disappearing font directories are skipped.
     }
   }
@@ -135,7 +143,7 @@ export async function registerSystemFonts(
   // Discovery and sizing run first so the residency plan can rank the whole
   // corpus before any file is read; every candidate is still read exactly once.
   const candidates: FontResidencyCandidate[] = [];
-  for (const discovered of await discoverFontFiles(directories)) {
+  for (const discovered of await discoverFontFiles(directories, signal)) {
     throwIfAborted(signal);
     try {
       const stat = await fs.promises.stat(discovered.path);
