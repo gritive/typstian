@@ -532,6 +532,27 @@ describe("system font directories", () => {
     expect(directories).toContain("/usr/share/fonts");
   });
 
+  it("applies the byte bound to an included file, not only the named one", () => {
+    const directories = linuxDirectoriesFor((root) => {
+      const oversized = path.join(root, "oversized-include.conf");
+      fs.writeFileSync(
+        oversized,
+        "<fontconfig><dir>/opt/oversized-included</dir><!--" +
+          "p".repeat(MAX_FONTCONFIG_FILE_BYTES) +
+          "--></fontconfig>",
+      );
+      return `<fontconfig>
+  <include>${oversized}</include>
+  <dir>/opt/small-declaring-file</dir>
+</fontconfig>`;
+    });
+
+    // The including file is well under the bound, so only a bound that reaches
+    // the included file can keep this out.
+    expect(directories).not.toContain("/opt/oversized-included");
+    expect(directories).toContain("/opt/small-declaring-file");
+  });
+
   it("reads at most the bounded number of conf.d fragments", () => {
     const directories = withFontconfig({}, (root) => {
       const fontconfigPath = path.join(root, "fonts");
