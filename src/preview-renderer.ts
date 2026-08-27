@@ -1,4 +1,5 @@
 import type { CompilerDiagnostic } from "./compiler-client";
+import { diagnosticLabel, diagnosticText, MESSAGES } from "./messages";
 import { PdfPreviewRenderer, type PdfEngine, type PdfPreviewPoint } from "./pdf-preview-renderer";
 import { createPdfJsEngine } from "./pdfjs-adapter";
 
@@ -67,14 +68,14 @@ export class PreviewRenderer {
         if (this.isCurrent(generation)) {
           await this.pdf.clear();
           this.hasVisiblePdf = false;
-          this.renderError("Unable to render the compiled PDF.", []);
+          this.renderError(MESSAGES.preview.unableToRender, []);
         }
       }
       return;
     }
 
     if (this.hasVisiblePdf && state.status === "compiling") {
-      this.renderMessage("Compiling Typst document…", "status");
+      this.renderMessage(MESSAGES.preview.compiling, "status");
       return;
     }
 
@@ -83,10 +84,10 @@ export class PreviewRenderer {
     this.hasVisiblePdf = false;
     switch (state.status) {
       case "idle":
-        this.renderMessage("Open a Typst file to preview it.", "status");
+        this.renderMessage(MESSAGES.preview.idle, "status");
         break;
       case "compiling":
-        this.renderMessage("Compiling Typst document…", "status");
+        this.renderMessage(MESSAGES.preview.compiling, "status");
         break;
       case "error":
         this.renderError(state.message, state.diagnostics);
@@ -148,19 +149,19 @@ export class PreviewRenderer {
     container.createEl("p").textContent = message;
 
     for (const diagnostic of diagnostics) {
-      const located = diagnostic.path !== undefined
-        && diagnostic.line !== undefined
-        && diagnostic.column !== undefined;
+      const { path, line, column } = diagnostic;
+      const located = path !== undefined
+        && line !== undefined
+        && column !== undefined;
       const element = container.createEl(located ? "button" : "p", {
         cls: "typst-preview-diagnostic",
       });
       if (located) {
         element.setAttribute("type", "button");
-        element.textContent =
-          `${diagnostic.path}:${diagnostic.line}:${diagnostic.column} — ${diagnostic.message}`;
+        element.textContent = diagnosticText(path, line, column, diagnostic.message);
         element.setAttribute(
           "aria-label",
-          `Go to ${diagnostic.path}, line ${diagnostic.line}, column ${diagnostic.column}: ${diagnostic.message}`
+          diagnosticLabel(path, line, column, diagnostic.message),
         );
         element.addEventListener("click", () => this.onDiagnostic?.(diagnostic));
       } else {

@@ -20,7 +20,10 @@ export function makePdfEngine(pageCount = 0) {
     numPages: pages.length,
     getPage: vi.fn((page) => Promise.resolve(pages[page - 1]!))
   };
-  const load = vi.fn(() => ({ promise: Promise.resolve(document), destroy }));
+  const load = vi.fn((data: Uint8Array) => {
+    void data;
+    return { promise: Promise.resolve(document), destroy };
+  });
   const engine: PdfEngine = {
     load,
     createTextLayer: vi.fn(() => ({ render: () => Promise.resolve(), cancel: vi.fn() }))

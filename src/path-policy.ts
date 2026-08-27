@@ -93,13 +93,7 @@ function canonicalOrSelf(directory: string): string {
  * and the commands that refuse to run both say this, so the two cannot drift
  * into telling the same user different stories about one value.
  */
-export const COMPILATION_ROOT_PROBLEM: Record<CompilationRootProblem, string> = {
-  "missing": "No folder at this path yet. Create it, or type a path that exists.",
-  "not-a-folder": "This path is a file, not a folder. Type the path of a folder instead.",
-  "broken-link": "This link points at nothing. Fix the link, or type another path.",
-  "unreadable": "This path cannot be read. Check its permissions, or type another path.",
-  "outside-vault": "This path leaves the vault. Type a path inside the vault instead."
-};
+export { COMPILATION_ROOT_PROBLEM } from "./messages";
 
 export function checkCompilationRoot(vaultRoot: string, rootPath: string): CompilationRootCheck {
   // The escape is decided lexically first, so `../notes` is named for leaving

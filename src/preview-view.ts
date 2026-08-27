@@ -11,6 +11,7 @@ import {
   type CompilerJumpRequest,
   type CompilerJumpResult
 } from "./compiler-client";
+import { MESSAGES, previewTitle } from "./messages";
 import type { PdfEngine, PdfPreviewPoint } from "./pdf-preview-renderer";
 import { compilerResultToRenderState, parsePreviewState } from "./preview-model";
 import { PreviewController, type PreviewState } from "./preview-controller";
@@ -68,9 +69,7 @@ export class TypstPreviewView extends ItemView {
   }
 
   override getDisplayText(): string {
-    return this.state.sourcePath === null
-      ? "Typst preview"
-      : `Typst preview: ${this.state.sourcePath.split("/").at(-1) ?? this.state.sourcePath}`;
+    return previewTitle(this.state.sourcePath);
   }
 
   override getState(): Record<string, unknown> {
@@ -232,12 +231,22 @@ export class TypstPreviewView extends ItemView {
     this.contentEl.classList.add("typstian-preview");
     const toolbar = this.contentEl.createDiv({ cls: "typst-preview-toolbar" });
 
-    this.createToolbarButton(toolbar, "−", "Zoom out", () => this.renderer?.zoomOut());
-    this.createToolbarButton(toolbar, "+", "Zoom in", () => this.renderer?.zoomIn());
     this.createToolbarButton(
       toolbar,
-      "Fit",
-      "Fit pages to the preview width",
+      "−",
+      MESSAGES.preview.zoomOut,
+      () => this.renderer?.zoomOut(),
+    );
+    this.createToolbarButton(
+      toolbar,
+      "+",
+      MESSAGES.preview.zoomIn,
+      () => this.renderer?.zoomIn(),
+    );
+    this.createToolbarButton(
+      toolbar,
+      MESSAGES.preview.fit,
+      MESSAGES.preview.fitTitle,
       () => this.renderer?.fitToWidth(),
     );
     // Saving needs a source, not a rendered document: it compiles the current
@@ -245,8 +254,8 @@ export class TypstPreviewView extends ItemView {
     // make the action meaningless is a preview following nothing.
     this.saveButton = this.createToolbarButton(
       toolbar,
-      "Save",
-      "Save the compiled PDF to the vault",
+      MESSAGES.preview.save,
+      MESSAGES.commands.savePdf,
       () => this.saveCompiledPdf(),
     );
     this.syncSaveButton();
@@ -322,7 +331,7 @@ export class TypstPreviewView extends ItemView {
           status: "error",
           message: error instanceof CompilerClientError
             ? error.message
-            : "Typst preview failed unexpectedly.",
+            : MESSAGES.preview.failedUnexpectedly,
           diagnostics: []
         }) ?? Promise.resolve();
         this.activeRender = rendered;
@@ -408,7 +417,7 @@ export class TypstPreviewView extends ItemView {
     if (button === null) return;
     const saving = this.savingPdf !== null;
     button.disabled = saving || this.state.sourcePath === null;
-    button.textContent = saving ? "Saving…" : "Save";
+    button.textContent = saving ? MESSAGES.preview.saving : MESSAGES.preview.save;
     button.setAttribute("aria-busy", saving ? "true" : "false");
   }
 

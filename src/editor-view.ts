@@ -28,6 +28,7 @@ import { TextFileView, type WorkspaceLeaf } from "obsidian";
 
 import type { CompilerCompletion, CompilerDiagnostic } from "./compiler-client";
 import { typstLanguage } from "./language";
+import { MESSAGES } from "./messages";
 
 export const TYPST_VIEW_TYPE = "typst-editor";
 
@@ -54,7 +55,7 @@ export interface TypstCompletionResponse {
 // One label for every surface that opens the preview — the palette command, the
 // editor's header action, and the file menu — because a user who learns it in
 // one place should recognize it in the others.
-export const OPEN_PREVIEW_LABEL = "Open Typst preview";
+export const OPEN_PREVIEW_LABEL = MESSAGES.commands.openPreview;
 
 export interface TypstEditorViewOptions {
   onDirty?: () => void;
@@ -191,7 +192,7 @@ export class TypstEditorView extends TextFileView {
   }
 
   override getDisplayText(): string {
-    return this.file?.basename ?? "Typst editor";
+    return this.file?.basename ?? MESSAGES.editor.title;
   }
 
   override getViewData(): string {

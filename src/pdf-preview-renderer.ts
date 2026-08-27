@@ -1,3 +1,18 @@
+import {
+  MESSAGES,
+  pdfPageLabel,
+  pdfRetryLabel,
+  pdfSourceLabel,
+  pdfTextLayerLabel,
+} from "./messages";
+
+type PdfPreviewWindow = Window & {
+  ResizeObserver?: typeof ResizeObserver;
+  IntersectionObserver?: typeof IntersectionObserver;
+  Element: typeof Element;
+  createFragment(): DocumentFragment;
+};
+
 export interface PdfViewport {
   width: number;
   height: number;
@@ -173,7 +188,7 @@ private pageObserver: IntersectionObserver | null = null;
     this.observedWidth = this.root.offsetWidth
       || this.root.getBoundingClientRect().width
       || this.root.clientWidth;
-    const ResizeObserverCtor = root.win.ResizeObserver;
+    const ResizeObserverCtor = (root.win as PdfPreviewWindow).ResizeObserver;
     this.resizeObserver = typeof ResizeObserverCtor === "undefined"
       ? null
       : new ResizeObserverCtor((entries) => {
@@ -279,7 +294,6 @@ private pageObserver: IntersectionObserver | null = null;
     const marker = page.createSpan({ cls: "typst-pdf-forward-marker" });
     marker.setAttribute("aria-hidden", "true");
     this.positionForwardMarker(page, marker, point);
-    page.classList.add("typst-pdf-forward-target");
     this.forwardMarker = marker;
     this.forwardPoint = point;
     if (!rendered) {
@@ -288,7 +302,6 @@ private pageObserver: IntersectionObserver | null = null;
     marker.scrollIntoView?.({ block: "center", inline: "center" });
     this.forwardMarkerTimer = this.root.win.setTimeout(() => {
       if (this.forwardMarker !== marker) return;
-      page.classList.remove("typst-pdf-forward-target");
       marker.remove();
       this.forwardMarker = null;
       this.forwardPoint = null;
@@ -363,7 +376,7 @@ private pageObserver: IntersectionObserver | null = null;
 
     // Held in a fragment so the previous PDF stays visible until the priority
     // page has rendered and the whole container can be swapped in at once.
-    const fragment = this.root.doc.createDocumentFragment();
+    const fragment = (this.root.win as PdfPreviewWindow).createFragment();
     const container = fragment.createDiv({ cls: "typst-pdf-pages" });
 
     const pageElements = new Map<number, HTMLElement>();
@@ -488,11 +501,11 @@ private pageObserver: IntersectionObserver | null = null;
             pageElement.dataset.rendered = "error";
             const message = pageElement.createDiv({ cls: "typst-pdf-page-error" });
             message.setAttribute("role", "alert");
-            message.append("Could not render PDF page.");
+            message.append(MESSAGES.pdf.pageError);
             const retry = message.createEl("button", { cls: "typst-pdf-page-retry" });
             retry.type = "button";
-            retry.setAttribute("aria-label", `Retry PDF page ${pageNumber}`);
-            retry.textContent = "Retry";
+            retry.setAttribute("aria-label", pdfRetryLabel(pageNumber));
+            retry.textContent = MESSAGES.pdf.retry;
             retry.addEventListener("click", () => {
               void requestPage(pageNumber).catch(() => undefined);
             });
@@ -529,7 +542,8 @@ private pageObserver: IntersectionObserver | null = null;
     this.root.replaceChildren(container);
     this.restoreScrollPosition(scrollPosition);
 
-    const IntersectionObserverCtor = this.root.win.IntersectionObserver;
+    const IntersectionObserverCtor =
+      (this.root.win as PdfPreviewWindow).IntersectionObserver;
     if (typeof IntersectionObserverCtor !== "undefined") {
       const observer = new IntersectionObserverCtor((entries) => {
         if (!this.isCurrent(generation) || this.pageObserver !== observer) return;
@@ -613,7 +627,7 @@ private pageObserver: IntersectionObserver | null = null;
     pageElement.dataset.rendered = "rendering";
     pageElement.removeAttribute("tabindex");
     pageElement.setAttribute("role", "region");
-    pageElement.setAttribute("aria-label", `PDF page ${pageNumber}`);
+    pageElement.setAttribute("aria-label", pdfPageLabel(pageNumber));
     if (scrollPosition !== null) this.restoreScrollPosition(scrollPosition);
 
     const emitPoint = (viewportX: number, viewportY: number): void => {
@@ -644,7 +658,9 @@ private pageObserver: IntersectionObserver | null = null;
         return;
       }
       const target = event.target;
-      const interactiveTarget = target instanceof pageElement.win.Element
+      const interactiveTarget = target instanceof (
+        pageElement.win as PdfPreviewWindow
+      ).Element
         ? target.closest("a[href], button, input, select, textarea, [role=button]")
         : null;
       if (interactiveTarget !== null && interactiveTarget !== pageElement) return;
@@ -686,13 +702,13 @@ private pageObserver: IntersectionObserver | null = null;
     canvas.setAttribute("aria-hidden", "true");
 
     const textLayer = pageElement.createDiv({ cls: "typst-pdf-text-layer textLayer" });
-    textLayer.setAttribute("aria-label", `Selectable text for PDF page ${pageNumber}`);
+    textLayer.setAttribute("aria-label", pdfTextLayerLabel(pageNumber));
     textLayer.style.setProperty("--scale-factor", String(scale));
 
     const sourceButton = pageElement.createEl("button", { cls: "typst-pdf-source-jump" });
     sourceButton.type = "button";
-    sourceButton.setAttribute("aria-label", `Jump to source from PDF page ${pageNumber}`);
-    sourceButton.textContent = "Source";
+    sourceButton.setAttribute("aria-label", pdfSourceLabel(pageNumber));
+    sourceButton.textContent = MESSAGES.pdf.source;
     const onSourceClick = (): void => {
       if (generation !== this.visibleGeneration || this.disposed) return;
       const rotation = ((baseViewport.rotation ?? 0) % 360 + 360) % 360;
@@ -864,7 +880,6 @@ private pageObserver: IntersectionObserver | null = null;
     const marker = this.forwardMarker;
     this.forwardMarker = null;
     this.forwardPoint = null;
-    marker?.parentElement?.classList.remove("typst-pdf-forward-target");
     marker?.remove();
   }
 

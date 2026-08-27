@@ -30,6 +30,15 @@ function completedTask(): PdfRenderTask {
   return { promise: Promise.resolve(), cancel: vi.fn() };
 }
 
+function popoutWindow(): Window {
+  const popout = new Window();
+  Object.defineProperty(popout, "createFragment", {
+    configurable: true,
+    value: () => popout.document.createDocumentFragment(),
+  });
+  return popout;
+}
+
 function viewport(page: number, scale: number, height = 800): PdfViewport {
   void page;
   return {
@@ -677,7 +686,7 @@ describe("PdfPreviewRenderer", () => {
   it("preserves interactive clicks in a popout window", async () => {
     vi.spyOn(HTMLCanvasElement.prototype, "getContext")
       .mockReturnValue({} as CanvasRenderingContext2D);
-    const popout = new Window();
+    const popout = popoutWindow();
     const root = popout.document.createElement("section") as unknown as HTMLElement;
     const { engine } = engineFor([documentHandle([pageHandle(1)])]);
     const onPoint = vi.fn();
@@ -959,7 +968,7 @@ describe("PdfPreviewRenderer", () => {
   });
 
   it("uses the popout window resize observer", async () => {
-    const popout = new Window();
+    const popout = popoutWindow();
     const disconnect = vi.fn();
     Object.defineProperty(popout, "ResizeObserver", {
       configurable: true,
@@ -991,7 +1000,7 @@ describe("PdfPreviewRenderer", () => {
     vi.stubGlobal("createFragment", () => {
       throw new Error("main-window document fragment was used");
     });
-    const popout = new Window();
+    const popout = popoutWindow();
     const root = popout.document.createElement("section") as unknown as HTMLElement;
     const { engine } = engineFor([documentHandle([pageHandle(1)])]);
     const renderer = new PdfPreviewRenderer(root, { engine });
@@ -1008,7 +1017,7 @@ describe("PdfPreviewRenderer", () => {
     vi.spyOn(HTMLCanvasElement.prototype, "getContext")
       .mockReturnValue({} as CanvasRenderingContext2D);
     const observe = vi.fn();
-    const popout = new Window();
+    const popout = popoutWindow();
     Object.defineProperty(popout, "IntersectionObserver", {
       configurable: true,
       value: class PopoutIntersectionObserver {

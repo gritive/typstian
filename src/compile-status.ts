@@ -20,6 +20,8 @@ export type CompileStatusEvent =
   }
   | { readonly type: "disposed"; readonly preview: string };
 
+import { failedCompileStatus, MESSAGES } from "./messages";
+
 interface PreviewCompileStatus {
   readonly compiling: boolean;
   /** `null` once the last compile succeeded, was cancelled, or never ran. */
@@ -65,11 +67,11 @@ export function reduceCompileStatus(
 export function compileStatusLabel(state: CompileStatusState): string {
   const previews = [...state.previews.values()];
   if (previews.length === 0) return "";
-  if (previews.some((preview) => preview.compiling)) return "Typst: compiling…";
+  if (previews.some((preview) => preview.compiling)) return MESSAGES.status.compiling;
   const newest = previews[previews.length - 1]!;
-  if (newest.errorCount === null) return "Typst: idle";
-  if (newest.errorCount === 0) return "Typst: failed";
-  return `Typst: failed (${newest.errorCount} ${newest.errorCount === 1 ? "error" : "errors"})`;
+  if (newest.errorCount === null) return MESSAGES.status.idle;
+  if (newest.errorCount === 0) return MESSAGES.status.failed;
+  return failedCompileStatus(newest.errorCount);
 }
 
 /**

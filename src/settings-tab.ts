@@ -6,7 +6,8 @@ import {
   type SettingDefinitionItem
 } from "obsidian";
 
-import { COMPILATION_ROOT_PROBLEM, checkCompilationRoot } from "./path-policy";
+import { COMPILATION_ROOT_PROBLEM, MESSAGES } from "./messages";
+import { checkCompilationRoot } from "./path-policy";
 import type { TypstianSettings } from "./settings-model";
 
 export interface SettingsHost {
@@ -18,13 +19,11 @@ const ROOT_PATH_KEY = "rootPath";
 // Every accepted change restarts each preview's compiler backend, so a burst of
 // keystrokes has to settle into one save.
 const SAVE_DEBOUNCE_MS = 300;
-const ROOT_PATH_DESC = "Optional path relative to the vault. Empty uses the vault root.";
 // Without this, an unusable root only surfaces much later as a notice on an
 // unrelated action: creating a file rejects a root outside the vault, opening a
 // preview rejects an entry the root cannot contain. Each sentence has to be true
 // of exactly its own state and name the action that fixes that state, since the
 // fixes differ: create the folder, retype the path, or repair permissions.
-const ROOT_READY = "Ready: this folder is inside the vault.";
 
 export class TypstianSettingsTab extends PluginSettingTab {
   private saveTimer: number | null = null;
@@ -38,15 +37,15 @@ export class TypstianSettingsTab extends PluginSettingTab {
     // The status lives in the row's own description, so it can be rewritten in
     // place without re-rendering the field the user is typing in.
     const desc = createFragment();
-    desc.createSpan().textContent = ROOT_PATH_DESC;
+    desc.createSpan().textContent = MESSAGES.settings.rootDescription;
     this.statusEl = desc.createDiv();
     this.statusEl.setAttribute("role", "status");
     this.showStatus(this.host.settings.rootPath);
     return [
       {
-        name: "Compilation root",
+        name: MESSAGES.settings.compilationRoot,
         desc,
-        control: { type: "text", key: ROOT_PATH_KEY, placeholder: "projects/book" },
+        control: { type: "text", key: ROOT_PATH_KEY, placeholder: MESSAGES.settings.rootPlaceholder },
       },
     ];
   }
@@ -86,7 +85,9 @@ export class TypstianSettingsTab extends PluginSettingTab {
     }
     const check = checkCompilationRoot(vaultRoot, rootPath);
     if (!check.ok) status.className += " is-invalid";
-    status.textContent = check.ok ? ROOT_READY : COMPILATION_ROOT_PROBLEM[check.reason];
+    status.textContent = check.ok
+      ? MESSAGES.settings.rootReady
+      : COMPILATION_ROOT_PROBLEM[check.reason];
   }
 
   private vaultRoot(): string | null {

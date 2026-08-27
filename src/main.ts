@@ -42,10 +42,18 @@ import {
   resolveCompilationRoot,
   resolveDiagnosticVaultPath,
   resolveCompilerEntryPath,
-  COMPILATION_ROOT_PROBLEM,
   checkCompilationRoot,
   type CompilationRootCheck
 } from "./path-policy";
+import {
+  COMPILATION_ROOT_PROBLEM,
+  createFailedNotice,
+  environmentNotice,
+  MESSAGES,
+  savedPdfNotice,
+  savePdfFailedNotice,
+  sourceNotFoundNotice,
+} from "./messages";
 import { isWithinVaultFolder, resolveNewTypstFile } from "./new-typst-file";
 
 type CompilationRootFolder =
@@ -115,7 +123,7 @@ export default class TypstianPlugin extends Plugin {
 
     this.addCommand({
       id: "create-typst-file",
-      name: "Create a Typst file",
+      name: MESSAGES.commands.createTypstFile,
       callback: () => {
         const root = this.compilationRootFolder();
         if (!root.ok) {
@@ -137,7 +145,7 @@ export default class TypstianPlugin extends Plugin {
     });
     this.addCommand({
       id: "save-compiled-pdf",
-      name: "Save the compiled PDF to the vault",
+      name: MESSAGES.commands.savePdf,
       checkCallback: (checking) => {
         const source = this.activeTypstPath();
         if (source === null) return false;
@@ -147,7 +155,7 @@ export default class TypstianPlugin extends Plugin {
     });
     this.addCommand({
       id: "check-typst-environment",
-      name: "Check Typst environment",
+      name: MESSAGES.commands.checkEnvironment,
       callback: () => { void this.checkEnvironment(); }
     });
     this.addSettingTab(new TypstianSettingsTab(this.app, this));
@@ -183,7 +191,7 @@ export default class TypstianPlugin extends Plugin {
       const root = this.compilationRootFolder();
       if (!root.ok || !isWithinVaultFolder(root.folder, file.path)) return;
       menu.addItem((item) => item
-        .setTitle("New Typst file")
+        .setTitle(MESSAGES.commands.newTypstFile)
         .setIcon("file-plus")
         .onClick(() => { void this.createTypstFile(file.path); }));
     }));
@@ -301,7 +309,7 @@ export default class TypstianPlugin extends Plugin {
         if (entryPath === null) {
           throw new CompilerClientError(
             "invalid-input",
-            "The Typst entry file must be inside the configured compilation root."
+            MESSAGES.notices.entryOutsideRoot
           );
         }
         this.noteCompileStatus({ type: "started", preview: previewId });
@@ -429,7 +437,7 @@ export default class TypstianPlugin extends Plugin {
       (candidate) => this.app.vault.getAbstractFileByPath(candidate) !== null
     );
     if (target === null) {
-      new Notice("Too many untitled Typst files sit in this folder; rename some and try again.");
+      new Notice(MESSAGES.notices.tooManyUntitled);
       return;
     }
     try {
@@ -439,7 +447,7 @@ export default class TypstianPlugin extends Plugin {
       await this.app.workspace.revealLeaf(leaf);
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
-      new Notice(`Unable to create ${target.path}: ${reason}`);
+      new Notice(createFailedNotice(target.path, reason));
     }
   }
 
@@ -537,7 +545,7 @@ private handleVaultPath(vaultPath: string, includeDirectEntry = true): void {
     try {
       savedText = await this.app.vault.read(file);
     } catch {
-      if (isCurrent()) new Notice("Unable to read the Typst source to reveal the matching spot in the preview.");
+      if (isCurrent()) new Notice(MESSAGES.notices.sourceUnreadable);
       return;
     }
     if (!isCurrent()) return;
@@ -547,14 +555,14 @@ private handleVaultPath(vaultPath: string, includeDirectEntry = true): void {
       savedText,
       request
     )) {
-      new Notice("Save the Typst file to reveal the matching spot in the preview.");
+      new Notice(MESSAGES.notices.saveBeforeReveal);
       return;
     }
 
     const preview = this.previewForSource(request.sourcePath);
     if (!isCurrent()) return;
     if (preview === undefined) {
-      new Notice("Open a preview of this Typst source to reveal the matching spot in it.");
+      new Notice(MESSAGES.notices.openPreviewBeforeReveal);
       return;
     }
 
@@ -566,7 +574,7 @@ private handleVaultPath(vaultPath: string, includeDirectEntry = true): void {
     );
     if (!isCurrent()) return;
     if (compilerSource === null) {
-      new Notice("The Typst source must be inside the configured compilation root.");
+      new Notice(MESSAGES.notices.sourceOutsideRoot);
       return;
     }
     await preview.forward(compilerSource, request.byteOffset, isCurrent);
@@ -667,7 +675,7 @@ private handleVaultPath(vaultPath: string, includeDirectEntry = true): void {
       && isCurrent()
       && !editor.revealByteOffset(location.byteOffset)
     ) {
-      new Notice("That source location is no longer valid for the current file.");
+      new Notice(MESSAGES.notices.staleSourceLocation);
     }
   }
 
@@ -683,12 +691,12 @@ private handleVaultPath(vaultPath: string, includeDirectEntry = true): void {
       compilerPath
     );
     if (vaultPath === null) {
-      new Notice("The source location points outside this vault.");
+      new Notice(MESSAGES.notices.sourceOutsideVault);
       return null;
     }
     const file = this.app.vault.getAbstractFileByPath(vaultPath);
     if (!(file instanceof TFile)) {
-      new Notice(`Typst source not found: ${vaultPath}`);
+      new Notice(sourceNotFoundNotice(vaultPath));
       return null;
     }
 
@@ -775,12 +783,12 @@ private handleVaultPath(vaultPath: string, includeDirectEntry = true): void {
       compiler = this.createCompilerClient();
       const result = await compiler.checkEnvironment();
       new Notice(
-        `Typstian WASM compiler; Typst ${result.typstVersion}\nRoot: ${this.compilationRoot(this.vaultRoot())}`
+        environmentNotice(result.typstVersion, this.compilationRoot(this.vaultRoot()))
       );
     } catch (error) {
       const message = error instanceof CompilerClientError
         ? error.message
-        : "Unable to initialize the bundled Typstian WASM compiler.";
+        : MESSAGES.notices.compilerUnavailable;
       new Notice(message);
     } finally {
       if (compiler !== null) {
@@ -803,7 +811,7 @@ private handleVaultPath(vaultPath: string, includeDirectEntry = true): void {
     const root = this.compilationRoot(vaultRoot);
     const entryPath = resolveCompilerEntryPath(vaultRoot, root, sourcePath);
     if (entryPath === null) {
-      new Notice("The Typst entry file must be inside the configured compilation root.");
+      new Notice(MESSAGES.notices.entryOutsideRoot);
       return;
     }
     const targetPath = resolvePdfExportPath(
@@ -811,7 +819,7 @@ private handleVaultPath(vaultPath: string, includeDirectEntry = true): void {
       (candidate) => this.app.vault.getAbstractFileByPath(candidate) !== null
     );
     if (targetPath === null) {
-      new Notice("Too many saved PDFs sit beside this Typst file; remove some and try again.");
+      new Notice(MESSAGES.notices.tooManySavedPdfs);
       return;
     }
 
@@ -834,11 +842,11 @@ private handleVaultPath(vaultPath: string, includeDirectEntry = true): void {
         targetPath,
         pdf.buffer.slice(pdf.byteOffset, pdf.byteOffset + pdf.byteLength)
       );
-      new Notice(`Saved the compiled PDF to ${targetPath}`);
+      new Notice(savedPdfNotice(targetPath));
     } catch (error) {
       const message = error instanceof CompilerClientError
         ? error.message
-        : `Unable to save the compiled PDF to ${targetPath}`;
+        : savePdfFailedNotice(targetPath);
       new Notice(message);
     } finally {
       if (compiler !== null) {
