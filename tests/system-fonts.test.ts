@@ -470,6 +470,31 @@ describe("system font directories", () => {
     expect(reads.filter((file) => file === shared)).toHaveLength(1);
   });
 
+  it("reads a file once even when both configuration halves include it", () => {
+    const shared = "/opt/conf/shared.conf";
+    const { directories, reads } = withFontconfig(
+      { FONTCONFIG_PATH: "/opt/etc-fonts", XDG_CONFIG_HOME: "/opt/config-home" },
+      () =>
+        withVirtualFontconfig(
+          {
+            "/opt/etc-fonts/fonts.conf": `<fontconfig><include>${shared}</include></fontconfig>`,
+            "/opt/config-home/fontconfig/fonts.conf": `<fontconfig><include>${shared}</include></fontconfig>`,
+            [shared]: "<fontconfig><dir>/opt/shared-across-halves</dir></fontconfig>",
+          },
+          (reads) => ({
+            directories: withPlatform("linux", () => systemFontDirectories()),
+            reads,
+          }),
+        ),
+    );
+
+    // Both halves are read — the point is that the file they share is not.
+    expect(directories).toContain("/opt/shared-across-halves");
+    expect(reads).toContain("/opt/etc-fonts/fonts.conf");
+    expect(reads).toContain("/opt/config-home/fontconfig/fonts.conf");
+    expect(reads.filter((file) => file === shared)).toHaveLength(1);
+  });
+
   it("stops following a straight include chain at the depth bound", () => {
     // No cycle here, so the visited set never fires: only the depth bound can
     // stop this. The chain is one longer than the bound allows.
