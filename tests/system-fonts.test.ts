@@ -74,9 +74,14 @@ describe("system font directories", () => {
   it("includes the mount points a sandboxed Obsidian sees host fonts at", () => {
     const directories = withPlatform("linux", () => systemFontDirectories());
 
-    expect(directories).toEqual(
-      expect.arrayContaining(["/run/host/fonts", "/run/host/local-fonts", "/run/host/user-fonts"]),
-    );
+    // Last, not merely present: the host mounts duplicate the whole host font
+    // tree, so ranking them ahead of the user's own directories would hand
+    // `planFontResidency` the wrong roots first.
+    expect(directories.slice(-3)).toEqual([
+      "/run/host/fonts",
+      "/run/host/local-fonts",
+      "/run/host/user-fonts",
+    ]);
   });
 
   it("scans the directories the fontconfig file named by the environment declares", () => {
