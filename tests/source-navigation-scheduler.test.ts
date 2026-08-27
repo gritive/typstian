@@ -43,4 +43,36 @@ describe("SourceNavigationScheduler", () => {
     expect(commit).not.toHaveBeenCalled();
     scheduler.dispose();
   });
+
+  it("propagates navigation failures", async () => {
+    const failure = new Error("navigation failed");
+    const scheduler = new SourceNavigationScheduler(() => Promise.reject(failure));
+
+    await expect(scheduler.schedule("section.typ", () => true)).rejects.toBe(failure);
+
+    scheduler.dispose();
+  });
+
+  it("cancel resolves queued navigation and invalidates the running one", async () => {
+    let finishRunning!: () => void;
+    const running = new Promise<void>((resolve) => { finishRunning = resolve; });
+    const currency: boolean[] = [];
+    const run = vi.fn(async (target: string, isCurrent: () => boolean) => {
+      if (target === "running.typ") await running;
+      currency.push(isCurrent());
+    });
+    const scheduler = new SourceNavigationScheduler(run);
+
+    const first = scheduler.schedule("running.typ", () => true);
+    const queued = scheduler.schedule("queued.typ", () => true);
+    scheduler.cancel();
+
+    await expect(queued).resolves.toBeUndefined();
+    finishRunning();
+    await first;
+
+    expect(run.mock.calls.map(([target]) => target)).toEqual(["running.typ"]);
+    expect(currency).toEqual([false]);
+    scheduler.dispose();
+  });
 });

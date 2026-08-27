@@ -75,4 +75,14 @@ describe("CompletionScheduler", () => {
 
     scheduler.dispose();
   });
+
+  it("answers with null when a completion request fails", async () => {
+    const scheduler = new CompletionScheduler<string, string>(() =>
+      Promise.reject(new Error("completion failed")),
+    );
+
+    await expect(scheduler.schedule("request", () => true)).resolves.toBeNull();
+
+    scheduler.dispose();
+  });
 });
