@@ -85,6 +85,20 @@ function withVirtualFontconfig<T>(
   }
 }
 
+// The common shape: one configuration file, named by FONTCONFIG_FILE, read on
+// Linux. `write` gets the temporary root and returns that file's contents.
+function linuxDirectoriesFor(
+  write: (root: string) => string,
+  environment: Record<string, string | undefined> = {},
+): string[] {
+  return withFontconfig(environment, (root) => {
+    const configuration = path.join(root, "fonts.conf");
+    fs.writeFileSync(configuration, write(root));
+    vi.stubEnv("FONTCONFIG_FILE", configuration);
+    return withPlatform("linux", () => systemFontDirectories());
+  });
+}
+
 describe("system font directories", () => {
   it("includes the mount points a sandboxed Obsidian sees host fonts at", () => {
     const directories = withPlatform("linux", () => systemFontDirectories());
@@ -100,36 +114,25 @@ describe("system font directories", () => {
   });
 
   it("scans the directories the fontconfig file named by the environment declares", () => {
-    const directories = withFontconfig({}, (root) => {
-      const configuration = path.join(root, "fonts.conf");
-      fs.writeFileSync(
-        configuration,
-        `<?xml version="1.0"?>
+    const directories = linuxDirectoriesFor(
+      () => `<?xml version="1.0"?>
 <fontconfig>
   <dir>/opt/declared-fonts</dir>
 </fontconfig>`,
-      );
-      vi.stubEnv("FONTCONFIG_FILE", configuration);
-      return withPlatform("linux", () => systemFontDirectories());
-    });
+    );
 
     expect(directories).toContain("/opt/declared-fonts");
   });
 
   it("expands ~ and resolves a relative xdg-prefixed directory against XDG_DATA_HOME", () => {
-    const directories = withFontconfig({ XDG_DATA_HOME: "/data/home" }, (root) => {
-      const configuration = path.join(root, "fonts.conf");
-      fs.writeFileSync(
-        configuration,
-        `<fontconfig>
+    const directories = linuxDirectoriesFor(
+      () => `<fontconfig>
   <dir>~/my-fonts</dir>
   <dir>~otheruser/fonts</dir>
   <dir prefix="xdg">my-xdg-fonts</dir>
 </fontconfig>`,
-      );
-      vi.stubEnv("FONTCONFIG_FILE", configuration);
-      return withPlatform("linux", () => systemFontDirectories());
-    });
+      { XDG_DATA_HOME: "/data/home" },
+    );
 
     expect(directories).toContain(path.join(os.homedir(), "my-fonts"));
     // "~otheruser" is another account's home, which this process cannot resolve.
@@ -286,20 +289,14 @@ describe("system font directories", () => {
   });
 
   it("returns absolute directories without duplicates", () => {
-    const directories = withFontconfig({}, (root) => {
-      const configuration = path.join(root, "fonts.conf");
-      fs.writeFileSync(
-        configuration,
-        `<fontconfig>
+    const directories = linuxDirectoriesFor(
+      () => `<fontconfig>
   <dir>/usr/share/fonts</dir>
   <dir>/opt/twice</dir>
   <dir>/opt/twice</dir>
   <dir>relative/fonts</dir>
 </fontconfig>`,
-      );
-      vi.stubEnv("FONTCONFIG_FILE", configuration);
-      return withPlatform("linux", () => systemFontDirectories());
-    });
+    );
 
     expect(directories).toEqual([...new Set(directories)]);
     expect(directories.every((directory) => path.isAbsolute(directory))).toBe(true);
@@ -307,16 +304,10 @@ describe("system font directories", () => {
   });
 
   it("follows an include to another configuration file", () => {
-    const directories = withFontconfig({}, (root) => {
+    const directories = linuxDirectoriesFor((root) => {
       const included = path.join(root, "my-fonts.conf");
       fs.writeFileSync(included, "<fontconfig><dir>/opt/included-fonts</dir></fontconfig>");
-      const configuration = path.join(root, "fonts.conf");
-      fs.writeFileSync(
-        configuration,
-        `<fontconfig><include>${included}</include></fontconfig>`,
-      );
-      vi.stubEnv("FONTCONFIG_FILE", configuration);
-      return withPlatform("linux", () => systemFontDirectories());
+      return `<fontconfig><include>${included}</include></fontconfig>`;
     });
 
     expect(directories).toContain("/opt/included-fonts");
@@ -348,25 +339,19 @@ describe("system font directories", () => {
   });
 
   it("follows an ignore_missing include, a ~ include, and a directory include", () => {
-    const directories = withFontconfig({}, (root) => {
+    const directories = linuxDirectoriesFor((root) => {
       const includedDirectory = path.join(root, "conf-parts");
       fs.mkdirSync(includedDirectory, { recursive: true });
       fs.writeFileSync(
         path.join(includedDirectory, "10-part.conf"),
         "<fontconfig><dir>/opt/directory-included</dir></fontconfig>",
       );
-      const configuration = path.join(root, "fonts.conf");
-      fs.writeFileSync(
-        configuration,
-        `<fontconfig>
+      return `<fontconfig>
   <include ignore_missing="yes">${path.join(root, "absent.conf")}</include>
   <include ignore_missing="yes">${includedDirectory}</include>
   <include>~/.fonts.conf.d/nothing.conf</include>
   <dir>/opt/still-read</dir>
-</fontconfig>`,
-      );
-      vi.stubEnv("FONTCONFIG_FILE", configuration);
-      return withPlatform("linux", () => systemFontDirectories());
+</fontconfig>`;
     });
 
     expect(directories).toContain("/opt/directory-included");
