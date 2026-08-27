@@ -11,9 +11,14 @@ import { forEachDiagnostic } from "@codemirror/lint";
 import { SearchQuery, setSearchQuery } from "@codemirror/search";
 import { describe, expect, it, vi } from "vitest";
 
-import { TYPST_VIEW_TYPE, TypstEditorView, utf8ByteOffset } from "../src/editor-view";
+import {
+  OPEN_PREVIEW_LABEL,
+  TYPST_VIEW_TYPE,
+  TypstEditorView,
+  utf8ByteOffset,
+} from "../src/editor-view";
 import { ForwardSearchScheduler } from "../src/forward-search-scheduler";
-import { headerActions } from "./stubs/view-actions";
+import { headerActions } from "./view-actions";
 
 function createView(onDirty = vi.fn(), onForwardSearch = vi.fn()) {
   const modify = vi.fn();
@@ -393,7 +398,7 @@ describe("TypstEditorView", () => {
     const view = new TypstEditorView(leaf, { onOpenPreview });
     view.file = { path: "book/main.typ" } as unknown as TFile;
 
-    const action = headerActions(view).find((entry) => entry.title === "Open Typst preview");
+    const action = headerActions(view).find((entry) => entry.title === OPEN_PREVIEW_LABEL);
     action?.callback();
 
     expect(action).toBeDefined();
@@ -405,7 +410,7 @@ describe("TypstEditorView", () => {
     const view = new TypstEditorView(leaf);
 
     expect(headerActions(view).map((entry) => entry.title))
-      .not.toContain("Open Typst preview");
+      .not.toContain(OPEN_PREVIEW_LABEL);
   });
 
   it("invalidates its forward-search owner when closed", async () => {

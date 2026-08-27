@@ -9,8 +9,8 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { DependencyIndex } from "../src/dependency-index";
 import TypstianPlugin from "../src/main";
-import { TypstEditorView } from "../src/editor-view";
-import { headerActions } from "./stubs/view-actions";
+import { OPEN_PREVIEW_LABEL, TypstEditorView } from "../src/editor-view";
+import { headerActions } from "./view-actions";
 
 interface DeferredLeaf {
   view: unknown;
@@ -645,7 +645,7 @@ describe("TypstianPlugin preview entry points", () => {
 
     const items = menuItems(menuCallbacks[0]!, fileAt("book/main.typ"));
 
-    expect(items.map((item) => item.title)).toEqual(["Open Typst preview"]);
+    expect(items.map((item) => item.title)).toEqual([OPEN_PREVIEW_LABEL]);
     items[0]!.click();
     expect(openPreview).toHaveBeenCalledWith("book/main.typ");
     plugin.onunload();
@@ -657,7 +657,7 @@ describe("TypstianPlugin preview entry points", () => {
     await plugin.onload();
     const leaf = { app: { vault: { modify: vi.fn() } } } as unknown as WorkspaceLeaf;
     const view = internals.createEditorView(leaf);
-    const action = headerActions(view).find((entry) => entry.title === "Open Typst preview");
+    const action = headerActions(view).find((entry) => entry.title === OPEN_PREVIEW_LABEL);
 
     // No file yet: the leaf has nothing to preview.
     action?.callback();
@@ -705,7 +705,7 @@ describe("TypstianPlugin preview entry points", () => {
       Object.assign(new TFolder(), { path: "notes" }),
     );
 
-    expect(forFile.map((item) => item.title)).toEqual(["Open Typst preview"]);
+    expect(forFile.map((item) => item.title)).toEqual([OPEN_PREVIEW_LABEL]);
     expect(forFolder.map((item) => item.title)).not.toContain("New Typst file");
 
     forFile[0]!.click();

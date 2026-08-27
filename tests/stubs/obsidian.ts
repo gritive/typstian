@@ -1,16 +1,21 @@
+export interface ViewHeaderAction {
+  icon: string;
+  title: string;
+  callback: () => void;
+}
+
 export class TextFileView {
   contentEl: HTMLElement;
   data = "";
   file: { path: string; extension: string } | null = null;
+  // Obsidian's view header actions; the stub records them so a test can
+  // activate one the way a click would.
+  readonly actions: ViewHeaderAction[] = [];
 
   constructor(_leaf?: unknown) {
     void _leaf;
     this.contentEl = document.createElement("div");
   }
-
-  // Obsidian's view header actions; the stub records them so a test can
-  // activate one the way a click would.
-  readonly actions: Array<{ icon: string; title: string; callback: () => void }> = [];
 
   requestSave(): void {}
 
@@ -19,8 +24,6 @@ export class TextFileView {
     return document.createElement("div");
   }
 }
-
-export const Platform = { isMacOS: false };
 
 export class View {
   constructor(public readonly leaf?: unknown) {}

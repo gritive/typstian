@@ -25,6 +25,7 @@ import { ForwardSearchScheduler } from "./forward-search-scheduler";
 import { SourceNavigationScheduler } from "./source-navigation-scheduler";
 import { chooseSourceEditorLeaf } from "./editor-leaf-policy";
 import {
+  OPEN_PREVIEW_LABEL,
   TYPST_VIEW_TYPE,
   TypstEditorView,
   type TypstCompletionRequest,
@@ -126,7 +127,7 @@ export default class TypstianPlugin extends Plugin {
     });
     this.addCommand({
       id: "open-typst-preview",
-      name: "Open Typst preview",
+      name: OPEN_PREVIEW_LABEL,
       checkCallback: (checking) => {
         const source = this.activeTypstPath();
         if (source === null) return false;
@@ -171,7 +172,7 @@ export default class TypstianPlugin extends Plugin {
       // root problem, the way `open-typst-preview` does.
       if (file instanceof TFile && file.extension === "typ") {
         menu.addItem((item) => item
-          .setTitle("Open Typst preview")
+          .setTitle(OPEN_PREVIEW_LABEL)
           .setIcon("file-text")
           .onClick(() => { void this.openPreview(file.path); }));
         return;

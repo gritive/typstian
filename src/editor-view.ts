@@ -51,6 +51,11 @@ export interface TypstCompletionResponse {
   completions: readonly CompilerCompletion[];
 }
 
+// One label for every surface that opens the preview — the palette command, the
+// editor's header action, and the file menu — because a user who learns it in
+// one place should recognize it in the others.
+export const OPEN_PREVIEW_LABEL = "Open Typst preview";
+
 export interface TypstEditorViewOptions {
   onDirty?: () => void;
   onForwardSearch?: (request: TypstForwardSearchRequest) => void;
@@ -167,7 +172,7 @@ export class TypstEditorView extends TextFileView {
     // editor in a background split offers it too. A view built without the
     // option gets no action at all rather than one that silently does nothing.
     if (onOpenPreview !== undefined) {
-      this.addAction("file-text", "Open Typst preview", () => {
+      this.addAction("file-text", OPEN_PREVIEW_LABEL, () => {
         const file = this.file;
         // A leaf that has not opened a file yet has nothing to preview.
         if (file === null) return;
