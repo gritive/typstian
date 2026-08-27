@@ -334,7 +334,9 @@ describe("system font directories", () => {
   it("returns absolute directories without duplicates", () => {
     const directories = linuxDirectoriesFor(
       () => `<fontconfig>
-  <dir>/usr/share/fonts</dir>
+  <dir>/usr/share/fonts/</dir>
+  <dir>//usr/share/fonts</dir>
+  <dir>/usr/local/share/./fonts</dir>
   <dir>/opt/twice</dir>
   <dir>/opt/twice</dir>
   <dir>relative/fonts</dir>
@@ -344,6 +346,12 @@ describe("system font directories", () => {
     expect(directories).toEqual([...new Set(directories)]);
     expect(directories.every((directory) => path.isAbsolute(directory))).toBe(true);
     expect(directories).toContain("/opt/twice");
+    // Spellings of a path already in the standard list must not reappear:
+    // a second entry for one directory also perturbs the residency ranking.
+    expect(directories.filter((directory) => directory === "/usr/share/fonts")).toHaveLength(1);
+    expect(directories).not.toContain("/usr/share/fonts/");
+    expect(directories).not.toContain("//usr/share/fonts");
+    expect(directories).not.toContain("/usr/local/share/./fonts");
   });
 
   it("follows an include to another configuration file", () => {

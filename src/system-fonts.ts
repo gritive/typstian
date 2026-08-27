@@ -405,8 +405,10 @@ export function systemFontDirectories(): string[] {
     // lives there is visible to every other application but would not be here.
     ...readFontconfigFile(path.join(home, ".fonts.conf"), prefixes),
   ];
-  // A fontconfig configuration routinely re-declares a standard path, and the
-  // first occurrence is the ranking that matters, so the Set keeps it.
+  // A fontconfig configuration routinely re-declares a standard path, often
+  // spelled differently ("/usr/share/fonts/", "//usr/share/fonts"). Dedupe on
+  // the normalized path, not the string, or the same directory enters twice and
+  // takes two discovery-root ranks. The first occurrence keeps its rank.
   return [...new Set([
     path.join(home, ".fonts"),
     path.join(dataHome, "fonts"),
@@ -422,5 +424,15 @@ export function systemFontDirectories(): string[] {
     "/run/host/fonts",
     "/run/host/local-fonts",
     "/run/host/user-fonts",
-  ])];
+  ].map(normalizeDirectory))];
+}
+
+// One spelling per directory. `path.normalize` collapses "." segments and
+// duplicate separators; the trailing separator it keeps is dropped here, since
+// "/usr/share/fonts/" and "/usr/share/fonts" are the same directory.
+function normalizeDirectory(directory: string): string {
+  const normalized = path.normalize(directory);
+  return normalized.length > 1 && normalized.endsWith(path.sep)
+    ? normalized.slice(0, -1)
+    : normalized;
 }
