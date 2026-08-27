@@ -716,6 +716,16 @@ describe("system font directories", () => {
       "C:\\Windows/Fonts",
     ]);
   });
+
+
+  it("keeps Windows font roots absolute when environment values are relative", () => {
+    const directories = withFontconfig(
+      { LOCALAPPDATA: "relative-local", WINDIR: "relative-windows" },
+      () => withPlatform("win32", () => systemFontDirectories()),
+    );
+
+    expect(directories).toEqual(["C:\\Windows/Fonts"]);
+  });
 });
 
 describe("system font loading", () => {

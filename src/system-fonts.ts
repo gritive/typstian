@@ -212,8 +212,16 @@ export function systemFontDirectories(): string[] {
     ];
   }
   if (process.platform === "win32") {
-    const windows = process.env.WINDIR ?? "C:\\Windows";
-    const local = process.env.LOCALAPPDATA;
+    const configuredWindows = process.env.WINDIR;
+    const windows =
+      configuredWindows && path.win32.isAbsolute(configuredWindows)
+        ? configuredWindows
+        : "C:\\Windows";
+    const configuredLocal = process.env.LOCALAPPDATA;
+    const local =
+      configuredLocal && path.win32.isAbsolute(configuredLocal)
+        ? configuredLocal
+        : undefined;
     return [
       ...(local ? [path.join(local, "Microsoft/Windows/Fonts")] : []),
       path.join(windows, "Fonts"),
