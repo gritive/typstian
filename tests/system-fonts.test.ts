@@ -364,6 +364,27 @@ describe("system font directories", () => {
     expect(directories).not.toContain("/opt/xdg-data-include");
   });
 
+  it("resolves a relative include against the including file's directory", () => {
+    const directories = linuxDirectoriesFor((root) => {
+      fs.mkdirSync(path.join(root, "conf.d"), { recursive: true });
+      fs.writeFileSync(
+        path.join(root, "conf.d", "10-nearby.conf"),
+        "<fontconfig><dir>/opt/relative-included</dir></fontconfig>",
+      );
+      fs.writeFileSync(
+        path.join(root, "sibling.conf"),
+        "<fontconfig><dir>/opt/relative-sibling</dir></fontconfig>",
+      );
+      return `<fontconfig>
+  <include>conf.d</include>
+  <include prefix="relative">sibling.conf</include>
+</fontconfig>`;
+    });
+
+    expect(directories).toContain("/opt/relative-included");
+    expect(directories).toContain("/opt/relative-sibling");
+  });
+
   it("stops following a straight include chain at the depth bound", () => {
     // No cycle here, so the visited set never fires: only the depth bound can
     // stop this. The chain is one longer than the bound allows.

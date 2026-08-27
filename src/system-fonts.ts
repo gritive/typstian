@@ -214,37 +214,43 @@ interface FontconfigPrefixes {
   readonly configHome: string;
 }
 
-// `<dir>` and `<include>` expand `~` alike, but their `prefix="xdg"` bases
-// differ — $XDG_DATA_HOME for a directory, $XDG_CONFIG_HOME for an include —
-// so the caller passes the base rather than one default deciding for both.
+// What a relative path in one kind of element means. `<dir>` and `<include>`
+// expand `~` alike but differ on the rest: their `prefix="xdg"` bases are
+// $XDG_DATA_HOME and $XDG_CONFIG_HOME respectively, and only an include
+// resolves a bare relative name — against the directory of the file declaring
+// it. A `<dir>` with no base leaves relative values dropped, per AC6.
+interface FontconfigBases {
+  readonly xdg: string;
+  readonly relative?: string;
+}
+
 // A path that resolves to nothing absolute is dropped, not guessed at.
 function expandFontconfigPath(
   value: string,
   attributes: string,
   prefixes: FontconfigPrefixes,
-  xdgBase: string,
+  bases: FontconfigBases,
 ): string | undefined {
   // Only this process's own home. "~otheruser/fonts" names another account,
   // which nothing here can resolve, so it is dropped rather than rewritten
   // under $HOME.
   if (value === "~" || value.startsWith("~/")) return path.join(prefixes.home, value.slice(1));
-  if (/\bprefix\s*=\s*["']xdg["']/.test(attributes) && !path.isAbsolute(value)) {
-    return path.join(xdgBase, value);
-  }
-  return path.isAbsolute(value) ? value : undefined;
+  if (path.isAbsolute(value)) return value;
+  if (/\bprefix\s*=\s*["']xdg["']/.test(attributes)) return path.join(bases.xdg, value);
+  return bases.relative ? path.join(bases.relative, value) : undefined;
 }
 
 function parseFontconfigElements(
   xml: string,
   element: RegExp,
   prefixes: FontconfigPrefixes,
-  xdgBase: string,
+  bases: FontconfigBases,
 ): string[] {
   const paths: string[] = [];
   for (const match of xml.replace(FONTCONFIG_COMMENT, "").matchAll(element)) {
     const value = (match[2] ?? "").trim();
     if (!value) continue;
-    const expanded = expandFontconfigPath(value, match[1] ?? "", prefixes, xdgBase);
+    const expanded = expandFontconfigPath(value, match[1] ?? "", prefixes, bases);
     if (expanded) paths.push(expanded);
   }
   return paths;
@@ -292,7 +298,7 @@ function readFontconfigFile(
       xml,
       FONTCONFIG_INCLUDE_ELEMENT,
       prefixes,
-      prefixes.configHome,
+      { xdg: prefixes.configHome, relative: path.dirname(file) },
     ).flatMap(
       (target) =>
         // An include naming a directory means every `.conf` inside it.
@@ -301,7 +307,9 @@ function readFontconfigFile(
         ),
     );
     return [
-      ...parseFontconfigElements(xml, FONTCONFIG_DIR_ELEMENT, prefixes, prefixes.dataHome),
+      ...parseFontconfigElements(xml, FONTCONFIG_DIR_ELEMENT, prefixes, {
+        xdg: prefixes.dataHome,
+      }),
       ...included,
     ];
   } catch {
