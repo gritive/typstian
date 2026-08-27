@@ -39,6 +39,7 @@ const TYPST_VERSION: &str = "0.15.1";
 const MAX_VAULT_FILE_BYTES: usize = 50 * 1024 * 1024;
 const MAX_TOTAL_INPUT_BYTES: usize = 70 * 1024 * 1024;
 const MAX_PDF_BYTES: usize = 50 * 1024 * 1024;
+const MAX_PDF_PAGES: usize = 1_000;
 const MAX_DEPENDENCIES: usize = 10_000;
 const MAX_FONT_FILE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_FONT_FACES: usize = 20_000;
@@ -696,6 +697,9 @@ impl Session {
                 });
             }
         };
+        if document.pages().len() > MAX_PDF_PAGES {
+            return Err(format!("document exceeds {MAX_PDF_PAGES} page limit"));
+        }
         let pdf = typst_pdf::pdf(&document, &PdfOptions::default())
             .map_err(|errors| format!("PDF export failed: {errors:?}"))?;
         ensure_pdf_size(pdf.len())?;

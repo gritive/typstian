@@ -573,3 +573,21 @@ fn resolves_the_current_date_from_the_host_clock() {
     );
     assert!(compiled.pdf_bytes > 0);
 }
+
+#[test]
+fn rejects_documents_over_the_supported_page_count() {
+    let source = "#set page(width: 10pt, height: 10pt, margin: 0pt)\n\
+                  #for _ in range(1001) { pagebreak(weak: false) }";
+    let result = Session::new().compile(CompileRequest {
+        clock: CLOCK,
+        entry: "main.typ".into(),
+        revision: 1,
+        files: vec![file_input("main.typ", source.as_bytes())],
+        packages: Vec::new(),
+    });
+
+    match result {
+        Err(error) => assert_eq!(error, "document exceeds 1000 page limit"),
+        Ok(_) => panic!("document over the supported page count compiled"),
+    }
+}
