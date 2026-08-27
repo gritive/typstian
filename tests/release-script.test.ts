@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { nextVersion, releaseEdits } from "../scripts/release.mjs";
 
+import { spawnSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
 describe("release version bump", () => {
   it("increments the patch component", () => {
     expect(nextVersion("0.0.1", "patch")).toBe("0.0.2");
@@ -54,5 +59,80 @@ describe("release file edits", () => {
 
     expect(manifest.version).toBe("0.0.1");
     expect(versions).toEqual({ "0.0.1": "1.13.1" });
+  });
+});
+
+describe("release publishing", () => {
+  it("publishes the branch and tag with one atomic push", () => {
+    const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), "typstian-release-"));
+    try {
+      const scriptsDirectory = path.join(fixtureRoot, "scripts");
+      const binDirectory = path.join(fixtureRoot, "bin");
+      const gitLog = path.join(fixtureRoot, "git.log");
+      fs.mkdirSync(scriptsDirectory);
+      fs.mkdirSync(binDirectory);
+      fs.copyFileSync(
+        path.resolve("scripts/release.mjs"),
+        path.join(scriptsDirectory, "release.mjs"),
+      );
+      fs.writeFileSync(
+        path.join(fixtureRoot, "manifest.json"),
+        JSON.stringify({ id: "typstian", version: "0.0.1", minAppVersion: "1.13.1" }),
+      );
+      fs.writeFileSync(
+        path.join(fixtureRoot, "package.json"),
+        JSON.stringify({ name: "typstian", version: "0.0.1" }),
+      );
+      fs.writeFileSync(
+        path.join(fixtureRoot, "package-lock.json"),
+        JSON.stringify({
+          name: "typstian",
+          version: "0.0.1",
+          packages: { "": { name: "typstian", version: "0.0.1" } },
+        }),
+      );
+      fs.writeFileSync(
+        path.join(fixtureRoot, "versions.json"),
+        JSON.stringify({ "0.0.1": "1.13.1" }),
+      );
+
+      const fakeGit = path.join(binDirectory, "git");
+      fs.writeFileSync(fakeGit, `#!/usr/bin/env node
+import fs from "node:fs";
+const args = process.argv.slice(2);
+fs.appendFileSync(process.env.GIT_LOG, JSON.stringify(args) + "\\n");
+if (args[0] === "rev-parse" && args[1] === "--abbrev-ref") {
+  process.stdout.write("main\\n");
+} else if (args[0] === "rev-parse") {
+  process.stdout.write("same-commit\\n");
+}
+`);
+      fs.chmodSync(fakeGit, 0o755);
+
+      const fakeNpm = path.join(binDirectory, "npm");
+      fs.writeFileSync(fakeNpm, "#!/usr/bin/env node\n");
+      fs.chmodSync(fakeNpm, 0o755);
+
+      const result = spawnSync(process.execPath, ["scripts/release.mjs", "patch"], {
+        cwd: fixtureRoot,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          GIT_LOG: gitLog,
+          PATH: `${binDirectory}${path.delimiter}${process.env.PATH ?? ""}`,
+        },
+      });
+
+      expect(result.status, result.stderr).toBe(0);
+      const commands = fs.readFileSync(gitLog, "utf8")
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line) as string[]);
+      expect(commands.filter(([command]) => command === "push")).toEqual([
+        ["push", "--atomic", "origin", "main", "0.0.2"],
+      ]);
+    } finally {
+      fs.rmSync(fixtureRoot, { recursive: true, force: true });
+    }
   });
 });

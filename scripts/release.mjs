@@ -109,8 +109,7 @@ function main(argv) {
 
   git("commit", "--all", "--message", `chore: release ${version}`);
   git("tag", version);
-  git("push", "origin", branch);
-  git("push", "origin", version);
+  git("push", "--atomic", "origin", branch, version);
   console.log(`Released ${version}; the tag push starts the release workflow.`);
 }
 
