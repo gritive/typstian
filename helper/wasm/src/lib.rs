@@ -40,6 +40,8 @@ const MAX_VAULT_FILE_BYTES: usize = 50 * 1024 * 1024;
 const MAX_TOTAL_INPUT_BYTES: usize = 70 * 1024 * 1024;
 const MAX_PDF_BYTES: usize = 50 * 1024 * 1024;
 const MAX_PDF_PAGES: usize = 1_000;
+// PDF's default user space conventionally supports page edges up to 200 inches.
+// This bounds geometry only; final output bytes keep their post-export limit.
 const MAX_PDF_PAGE_EDGE_POINTS: f64 = 14_400.0;
 const MAX_DEPENDENCIES: usize = 10_000;
 const MAX_FONT_FILE_BYTES: usize = 64 * 1024 * 1024;
