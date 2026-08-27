@@ -252,7 +252,9 @@ describe("system font directories", () => {
   });
 
   it("leaves macOS and Windows alone and never consults fontconfig there", () => {
-    const { darwin, win32 } = withFontconfig({ LOCALAPPDATA: "C:\\Users\\me\\AppData\\Local" }, (root) => {
+    const { darwin, win32 } = withFontconfig(
+      { LOCALAPPDATA: "C:\\Users\\me\\AppData\\Local", WINDIR: undefined },
+      (root) => {
       const configuration = path.join(root, "fonts.conf");
       fs.writeFileSync(configuration, "<fontconfig><dir>/opt/never-here</dir></fontconfig>");
       vi.stubEnv("FONTCONFIG_FILE", configuration);
@@ -260,7 +262,8 @@ describe("system font directories", () => {
         darwin: withPlatform("darwin", () => systemFontDirectories()),
         win32: withPlatform("win32", () => systemFontDirectories()),
       };
-    });
+      },
+    );
 
     expect(darwin).toEqual([
       path.join(os.homedir(), "Library/Fonts"),
@@ -268,9 +271,11 @@ describe("system font directories", () => {
       "/Network/Library/Fonts",
       "/System/Library/Fonts",
     ]);
+    // Literal paths, not the implementation's own expression: WINDIR is unset
+    // above, so the C:\Windows fallback is what must appear.
     expect(win32).toEqual([
-      path.join("C:\\Users\\me\\AppData\\Local", "Microsoft/Windows/Fonts"),
-      path.join(process.env.WINDIR ?? "C:\\Windows", "Fonts"),
+      "C:\\Users\\me\\AppData\\Local/Microsoft/Windows/Fonts",
+      "C:\\Windows/Fonts",
     ]);
   });
 });
