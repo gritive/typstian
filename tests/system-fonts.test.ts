@@ -16,7 +16,9 @@ describe("system font loading", () => {
       const skipped = path.join(temporary, "skipped.ttf");
       fs.writeFileSync(kept, "x".repeat(1024));
       fs.writeFileSync(skipped, "y".repeat(512));
-      const registerFont = vi.fn((_path: string, _bytes: Uint8Array, _resident: boolean) => 1);
+      const registerFont = vi.fn<(path: string, bytes: Uint8Array, resident: boolean) => number>(
+        () => 1,
+      );
 
       // A cap that only the larger file fits: the smaller one must still reach
       // the compiler, just without its bytes being held.
