@@ -781,20 +781,20 @@ describe("system font loading", () => {
 
   it("bounds a scan-wide number of visited directories", async () => {
     let canonicalIndex = 0;
-    const realpath = vi.spyOn(fs.promises, "realpath").mockImplementation(async () => {
+    const realpath = vi.spyOn(fs.promises, "realpath").mockImplementation(() => {
       const canonical = `/virtual/${canonicalIndex}`;
       canonicalIndex += 1;
-      return canonical;
+      return Promise.resolve(canonical);
     });
-    const readdir = vi.spyOn(fs.promises, "readdir").mockImplementation(async () => {
-      if (canonicalIndex > MAX_SYSTEM_FONT_FILES) return [];
-      return [{
+    const readdir = vi.spyOn(fs.promises, "readdir").mockImplementation((() => {
+      if (canonicalIndex > MAX_SYSTEM_FONT_FILES) return Promise.resolve([]);
+      return Promise.resolve([{
         name: "next",
         isDirectory: () => true,
         isFile: () => false,
         isSymbolicLink: () => false,
-      }] as fs.Dirent[];
-    });
+      }] as fs.Dirent[]);
+    }) as unknown as typeof fs.promises.readdir);
 
     try {
       await registerSystemFonts(["/virtual/root"], vi.fn());
@@ -809,21 +809,21 @@ describe("system font loading", () => {
 
   it("observes cancellation while discovering directories", async () => {
     const controller = new AbortController();
-    const realpath = vi.spyOn(fs.promises, "realpath").mockImplementation(async (file) =>
-      file.toString()
+    const realpath = vi.spyOn(fs.promises, "realpath").mockImplementation((file) =>
+      Promise.resolve(file.toString())
     );
-    const readdir = vi.spyOn(fs.promises, "readdir").mockImplementation(async () => {
+    const readdir = vi.spyOn(fs.promises, "readdir").mockImplementation((() => {
       if (readdir.mock.calls.length === 1) {
         controller.abort();
-        return [{
+        return Promise.resolve([{
           name: "nested",
           isDirectory: () => true,
           isFile: () => false,
           isSymbolicLink: () => false,
-        }] as fs.Dirent[];
+        }] as fs.Dirent[]);
       }
-      return [];
-    });
+      return Promise.resolve([]);
+    }) as unknown as typeof fs.promises.readdir);
 
     try {
       await expect(
