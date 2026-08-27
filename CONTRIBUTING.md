@@ -36,6 +36,8 @@ npm run licenses:check
 cargo test   --manifest-path helper/wasm/Cargo.toml
 cargo clippy --manifest-path helper/wasm/Cargo.toml --all-targets -- -D warnings
 
+cargo install wasm-bindgen-cli --version 0.2.127 --locked  # to match release CI
+
 make                      # same as npm run build
 make clean                # drop the cargo cache, main.js, and coverage output
 ```

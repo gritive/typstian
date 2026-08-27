@@ -34,6 +34,7 @@ jobs:
           rustup toolchain install 1.98.0 --profile minimal --target wasm32-unknown-unknown
           rustup default 1.98.0
           cargo install wasm-pack --version 0.15.0 --locked
+          cargo install wasm-bindgen-cli --version 0.2.127 --locked
 
       - name: Rebuild bundled WASM from source
         run: npm run build:wasm

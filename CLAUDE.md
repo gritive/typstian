@@ -72,6 +72,13 @@ and embeds the result in `main.js`; Community releases contain only `main.js`,
   the README paragraphs answering the community review's filesystem and
   dynamic-execution findings, and the split that keeps developer instructions in
   `CONTRIBUTING.md` rather than the README.
+- **Reproducing a release needs the pinned `wasm-bindgen` CLI.** `wasm-pack`
+  otherwise downloads whatever prebuilt binary its platform offers, and those
+  builds carry different `walrus` patches that rewrite the module differently —
+  0.0.6 came out 604 bytes apart between CI and a local build for that reason
+  alone. `cargo install wasm-bindgen-cli --version <the Cargo.lock version>
+  --locked` on both sides, which the release workflow does and the release
+  contract pins.
 - **The WASM build remaps its source paths.** rustc bakes the paths of every
   crate it compiles into the module, so without the `--remap-path-prefix` pair
   in `build:wasm` the artifact — and the `main.js` embedding it — differs per

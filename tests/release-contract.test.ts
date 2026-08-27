@@ -95,6 +95,15 @@ describe("release contract", () => {
     );
     expect(workflow).toContain("persist-credentials: false");
     expect(workflow).toContain("cargo install wasm-pack --version 0.15.0 --locked");
+    // wasm-pack otherwise downloads whatever prebuilt wasm-bindgen its platform
+    // offers, and those builds carry different walrus patches, which rewrite the
+    // module differently — the release stops being reproducible off the runner.
+    const wasmBindgenVersion = /name = "wasm-bindgen"\nversion = "([^"]+)"/
+      .exec(fs.readFileSync(path.join(root, "helper/wasm/Cargo.lock"), "utf8"))?.[1];
+    expect(wasmBindgenVersion).toBeDefined();
+    expect(workflow).toContain(
+      `cargo install wasm-bindgen-cli --version ${wasmBindgenVersion!} --locked`
+    );
     expect(workflow).toContain("npm run build:wasm");
     expect(workflow).toContain("npm run licenses:check");
     expect(workflow).toContain("actions/checkout@");
