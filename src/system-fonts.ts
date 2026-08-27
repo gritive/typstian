@@ -194,7 +194,7 @@ interface FontconfigRoots {
 function parseFontconfigDirectories(xml: string, roots: FontconfigRoots): string[] {
   const directories: string[] = [];
   for (const match of xml.replace(FONTCONFIG_COMMENT, "").matchAll(FONTCONFIG_DIR_ELEMENT)) {
-    const directory = match[2].trim();
+    const directory = (match[2] ?? "").trim();
     if (!directory) continue;
     if (directory.startsWith("~")) {
       directories.push(path.join(roots.home, directory.slice(1)));
@@ -202,7 +202,7 @@ function parseFontconfigDirectories(xml: string, roots: FontconfigRoots): string
     }
     // `prefix="xdg"` makes a relative path mean "under the XDG base directory",
     // which for a font directory is $XDG_DATA_HOME. An absolute path ignores it.
-    if (/\bprefix\s*=\s*["']xdg["']/.test(match[1]) && !path.isAbsolute(directory)) {
+    if (/\bprefix\s*=\s*["']xdg["']/.test(match[1] ?? "") && !path.isAbsolute(directory)) {
       directories.push(path.join(roots.dataHome, directory));
       continue;
     }

@@ -40,7 +40,7 @@ function withFontconfig<T>(
     ...environment,
   };
   for (const [name, value] of Object.entries(resolved)) {
-    vi.stubEnv(name, value as string | undefined);
+    vi.stubEnv(name, value);
   }
   try {
     return run(root);
