@@ -639,11 +639,18 @@ it("passes the pinned overlay snapshot to the engine compile request", async () 
       diagnostics: [],
     });
 
-    await expect(compile).resolves.toMatchObject({
+    const result = await compile;
+    expect(result).toMatchObject({
       ok: true,
       revision: 9,
       pdf: new Uint8Array(transferredPdf),
     });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.pdf.buffer).toBe(transferredPdf);
+      expect(result.pdf.byteOffset).toBe(0);
+      expect(result.pdf.byteLength).toBe(transferredPdf.byteLength);
+    }
     client.close();
   });
 

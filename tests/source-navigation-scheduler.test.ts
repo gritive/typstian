@@ -56,10 +56,10 @@ describe("SourceNavigationScheduler", () => {
   it("cancel resolves queued navigation and invalidates the running one", async () => {
     let finishRunning!: () => void;
     const running = new Promise<void>((resolve) => { finishRunning = resolve; });
-    const currency: boolean[] = [];
+    const isCurrentResults: boolean[] = [];
     const run = vi.fn(async (target: string, isCurrent: () => boolean) => {
       if (target === "running.typ") await running;
-      currency.push(isCurrent());
+      isCurrentResults.push(isCurrent());
     });
     const scheduler = new SourceNavigationScheduler(run);
 
@@ -72,7 +72,7 @@ describe("SourceNavigationScheduler", () => {
     await first;
 
     expect(run.mock.calls.map(([target]) => target)).toEqual(["running.typ"]);
-    expect(currency).toEqual([false]);
+    expect(isCurrentResults).toEqual([false]);
     scheduler.dispose();
   });
 });
