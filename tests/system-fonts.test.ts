@@ -155,6 +155,28 @@ describe("system font directories", () => {
     expect(directories).not.toContain("/opt/ignored");
   });
 
+  it("reads every root on the colon-separated fontconfig search path", () => {
+    const directories = withFontconfig({}, (root) => {
+      const first = path.join(root, "first-etc");
+      const second = path.join(root, "second-etc");
+      fs.mkdirSync(first, { recursive: true });
+      fs.mkdirSync(second, { recursive: true });
+      fs.writeFileSync(
+        path.join(first, "fonts.conf"),
+        "<fontconfig><dir>/opt/first-root</dir></fontconfig>",
+      );
+      fs.writeFileSync(
+        path.join(second, "fonts.conf"),
+        "<fontconfig><dir>/opt/second-root</dir></fontconfig>",
+      );
+      vi.stubEnv("FONTCONFIG_PATH", [first, second].join(path.delimiter));
+      return withPlatform("linux", () => systemFontDirectories());
+    });
+
+    expect(directories).toContain("/opt/first-root");
+    expect(directories).toContain("/opt/second-root");
+  });
+
   it("falls back to /etc/fonts when no fontconfig path is set", () => {
     const directories = withFontconfig({ FONTCONFIG_PATH: undefined }, () =>
       withVirtualFontconfig(

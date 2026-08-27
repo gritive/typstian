@@ -283,7 +283,12 @@ export function systemFontDirectories(): string[] {
   const roots = { home, dataHome };
   const systemFontconfig = fontconfigFile
     ? readFontconfigFile(fontconfigFile, roots)
-    : readFontconfigRoot(process.env.FONTCONFIG_PATH ?? "/etc/fonts", roots);
+    : // FONTCONFIG_PATH is a search path, not a directory: fontconfig reads
+      // every root on it, the way XDG_DATA_DIRS is read above.
+      (process.env.FONTCONFIG_PATH ?? "/etc/fonts")
+        .split(path.delimiter)
+        .filter(Boolean)
+        .flatMap((directory) => readFontconfigRoot(directory, roots));
   const configHome = process.env.XDG_CONFIG_HOME ?? path.join(home, ".config");
   const userFontconfig = readFontconfigRoot(path.join(configHome, "fontconfig"), roots);
   // A fontconfig configuration routinely re-declares a standard path, and the
