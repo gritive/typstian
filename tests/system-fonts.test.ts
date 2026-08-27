@@ -378,6 +378,34 @@ describe("system font directories", () => {
     expect(directories).not.toContain("/usr/local/share/./fonts");
   });
 
+
+  it("keeps Linux font roots absolute when XDG values are relative", () => {
+    const defaultDataHome = path.join(os.homedir(), ".local/share");
+    const defaultConfig = path.join(os.homedir(), ".config/fontconfig/fonts.conf");
+    const directories = withFontconfig(
+      {
+        FONTCONFIG_FILE: "/missing-fontconfig.conf",
+        XDG_CONFIG_HOME: "relative-config",
+        XDG_DATA_HOME: "relative-data",
+        XDG_DATA_DIRS: ["relative-share", "/opt/share"].join(path.delimiter),
+      },
+      () =>
+        withVirtualFontconfig(
+          {
+            [defaultConfig]:
+              '<fontconfig><dir prefix="xdg">configured-fonts</dir></fontconfig>',
+          },
+          () => withPlatform("linux", () => systemFontDirectories()),
+        ),
+    );
+
+    expect(directories).toContain(path.join(defaultDataHome, "fonts"));
+    expect(directories).toContain(path.join(defaultDataHome, "configured-fonts"));
+    expect(directories).toContain("/opt/share/fonts");
+    expect(directories.some((directory) => directory.endsWith("relative-share/fonts"))).toBe(false);
+    expect(directories.every((directory) => path.isAbsolute(directory))).toBe(true);
+  });
+
   it("follows an include to another configuration file", () => {
     const directories = linuxDirectoriesFor((root) => {
       const included = path.join(root, "my-fonts.conf");

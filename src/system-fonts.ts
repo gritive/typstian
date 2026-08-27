@@ -220,11 +220,19 @@ export function systemFontDirectories(): string[] {
     ];
   }
 
-  const dataHome = process.env.XDG_DATA_HOME ?? path.join(home, ".local/share");
+  const configuredDataHome = process.env.XDG_DATA_HOME;
+  const dataHome =
+    configuredDataHome && path.isAbsolute(configuredDataHome)
+      ? configuredDataHome
+      : path.join(home, ".local/share");
   const dataDirectories = (process.env.XDG_DATA_DIRS ?? "/usr/local/share:/usr/share")
     .split(path.delimiter)
-    .filter(Boolean);
-  const configHome = process.env.XDG_CONFIG_HOME ?? path.join(home, ".config");
+    .filter((directory) => path.isAbsolute(directory));
+  const configuredConfigHome = process.env.XDG_CONFIG_HOME;
+  const configHome =
+    configuredConfigHome && path.isAbsolute(configuredConfigHome)
+      ? configuredConfigHome
+      : path.join(home, ".config");
   const { system: systemFontconfig, user: userFontconfig } = fontconfigDirectories({
     home,
     dataHome,
@@ -249,7 +257,7 @@ export function systemFontDirectories(): string[] {
     "/run/host/fonts",
     "/run/host/local-fonts",
     "/run/host/user-fonts",
-  ].map(normalizeDirectory))];
+  ].filter((directory) => path.isAbsolute(directory)).map(normalizeDirectory))];
 }
 
 // One spelling per directory. `path.normalize` collapses "." segments and
