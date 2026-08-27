@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   MAX_FONTCONFIG_FILE_BYTES,
+  MAX_FONTCONFIG_FILES,
   MAX_FONTCONFIG_FRAGMENTS,
   MAX_FONTCONFIG_INCLUDE_DEPTH,
   MAX_SYSTEM_FONT_BYTES,
@@ -325,6 +326,16 @@ describe("system font directories", () => {
     expect(absent).toContain(path.join(os.homedir(), ".fonts"));
   });
 
+
+  it("rejects a malformed document after a complete directory element", () => {
+    const directories = linuxDirectoriesFor(
+      () => "<fontconfig><dir>/opt/partial-success</dir><include>",
+    );
+
+    expect(directories).not.toContain("/opt/partial-success");
+    expect(directories).toContain("/usr/share/fonts");
+  });
+
   it("decodes predefined entities and CDATA in a directory value", () => {
     const directories = linuxDirectoriesFor(
       () => `<fontconfig>
@@ -626,11 +637,11 @@ describe("system font directories", () => {
     const included = (index: number) => `/opt/conf/include-${index}.conf`;
     const files: Record<string, string> = {
       [entry]: `<fontconfig>${Array.from(
-        { length: MAX_FONTCONFIG_FRAGMENTS },
+        { length: MAX_FONTCONFIG_FILES },
         (_, index) => `<include>${included(index)}</include>`,
       ).join("")}</fontconfig>`,
     };
-    for (let index = 0; index < MAX_FONTCONFIG_FRAGMENTS; index += 1) {
+    for (let index = 0; index < MAX_FONTCONFIG_FILES; index += 1) {
       files[included(index)] =
         `<fontconfig><dir>/opt/budget-${index}</dir></fontconfig>`;
     }
@@ -645,9 +656,9 @@ describe("system font directories", () => {
       }),
     );
 
-    expect(reads).toHaveLength(MAX_FONTCONFIG_FRAGMENTS);
-    expect(directories).toContain(`/opt/budget-${MAX_FONTCONFIG_FRAGMENTS - 2}`);
-    expect(directories).not.toContain(`/opt/budget-${MAX_FONTCONFIG_FRAGMENTS - 1}`);
+    expect(reads).toHaveLength(MAX_FONTCONFIG_FILES);
+    expect(directories).toContain(`/opt/budget-${MAX_FONTCONFIG_FILES - 2}`);
+    expect(directories).not.toContain(`/opt/budget-${MAX_FONTCONFIG_FILES - 1}`);
   });
 
   it("leaves macOS and Windows alone and never consults fontconfig there", () => {

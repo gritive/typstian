@@ -1,6 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import { SaxesParser } from "saxes";
+
 // The font directories fontconfig's own configuration declares, which is what
 // makes Typstian agree with every other application on the machine about where
 // fonts live. This module is the reader for that configuration and nothing
@@ -17,6 +19,7 @@ import path from "node:path";
 // real fonts.conf is a few kilobytes and a conf.d holds a few dozen fragments.
 export const MAX_FONTCONFIG_FILE_BYTES = 1024 * 1024;
 export const MAX_FONTCONFIG_FRAGMENTS = 256;
+export const MAX_FONTCONFIG_FILES = MAX_FONTCONFIG_FRAGMENTS + 1;
 // fontconfig configurations include each other, sometimes in a cycle. The
 // visited set alone would terminate, but the depth keeps a legal deep chain
 // from costing the init thread an unbounded number of synchronous reads.
@@ -177,6 +180,7 @@ function readFontconfigFile(file: string, scan: FontconfigScan, depth = 0): stri
     // Size first, so an oversized file is never pulled into memory at all.
     if (fs.statSync(file).size > MAX_FONTCONFIG_FILE_BYTES) return [];
     const xml = fs.readFileSync(file, "utf8");
+    new SaxesParser().write(xml).close();
     const included = parseFontconfigElements(xml, "include", prefixes, file).flatMap(
       (target) =>
         // An include naming a directory means every `.conf` inside it.
@@ -211,7 +215,7 @@ export function fontconfigDirectories(prefixes: FontconfigPrefixes): FontconfigD
   const scan: FontconfigScan = {
     prefixes,
     visited: new Set(),
-    filesRemaining: MAX_FONTCONFIG_FRAGMENTS,
+    filesRemaining: MAX_FONTCONFIG_FILES,
   };
   // FONTCONFIG_PATH is a search path, not a directory: fontconfig reads every
   // root on it, the way XDG_DATA_DIRS is read by the caller.

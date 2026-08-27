@@ -19,7 +19,8 @@
   },
   "dependencies": {
     "codemirror-lang-typst": "0.6.0",
-    "pdfjs-dist": "4.8.69"
+    "pdfjs-dist": "4.8.69",
+    "saxes": "6.0.0"
   },
   "devDependencies": {
     "@codemirror/autocomplete": "6.20.3",

@@ -9,6 +9,7 @@ import { MAX_RESIDENT_FONT_BYTES, planFontResidency, type FontResidencyCandidate
 // discovery see one set of bounds rather than two modules' worth.
 export {
   MAX_FONTCONFIG_FILE_BYTES,
+  MAX_FONTCONFIG_FILES,
   MAX_FONTCONFIG_FRAGMENTS,
   MAX_FONTCONFIG_INCLUDE_DEPTH,
 } from "./fontconfig-directories";
