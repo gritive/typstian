@@ -648,6 +648,23 @@ describe("TypstianPlugin preview entry points", () => {
     expect(openPreview).toHaveBeenCalledWith("book/main.typ");
     plugin.onunload();
   });
+
+  it("keeps the preview item off other files and folders", async () => {
+    const { menuCallbacks, plugin } = harness([]);
+    await plugin.onload();
+
+    const markdown = Object.assign(new TFile(), {
+      path: "book/notes.md",
+      extension: "md",
+      basename: "notes",
+    });
+    const forMarkdown = menuItems(menuCallbacks[0]!, markdown);
+    const forFolder = menuItems(menuCallbacks[0]!, Object.assign(new TFolder(), { path: "book" }));
+
+    expect(forMarkdown).toHaveLength(0);
+    expect(forFolder.map((item) => item.title)).toEqual(["New Typst file"]);
+    plugin.onunload();
+  });
 });
 
 describe("TypstianPlugin completion routing", () => {
