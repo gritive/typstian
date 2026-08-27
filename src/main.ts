@@ -301,7 +301,8 @@ export default class TypstianPlugin extends Plugin {
       compiler = null;
     };
 
-    return new TypstPreviewView(leaf, {
+    let view!: TypstPreviewView;
+    view = new TypstPreviewView(leaf, {
       compile: async (sourcePath, revision, signal) => {
         const vaultRoot = this.vaultRoot();
         const root = this.compilationRoot(vaultRoot);
@@ -349,13 +350,23 @@ export default class TypstianPlugin extends Plugin {
       onSourceLocation: (location, isCurrent) => this.revealSourceLocation(location, isCurrent),
       savePdf: (sourcePath) => this.savePdf(sourcePath),
       disposeBackend: () => {
+        const sourcePath = view.getSourcePath();
         closeCompiler();
         this.noteCompileStatus({ type: "disposed", preview: previewId });
+        if (
+          sourcePath !== null
+          && !this.previewViews().some((candidate) => (
+            candidate !== view && candidate.getSourcePath() === sourcePath
+          ))
+        ) {
+          this.dependencies.remove(sourcePath);
+        }
       },
       // A restart keeps the preview open, so its status entry survives it.
       restartBackend: closeCompiler,
       requestSaveLayout: () => this.app.workspace.requestSaveLayout()
     });
+    return view;
   }
 
   /**

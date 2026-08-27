@@ -10,6 +10,10 @@ import { describe, expect, it, vi } from "vitest";
 import type { DependencyIndex } from "../src/dependency-index";
 import TypstianPlugin from "../src/main";
 import { OPEN_PREVIEW_LABEL, TypstEditorView } from "../src/editor-view";
+import {
+  TYPST_PREVIEW_VIEW_TYPE,
+  TypstPreviewView,
+} from "../src/preview-view";
 import { headerActions } from "./view-actions";
 
 interface DeferredLeaf {
@@ -40,6 +44,35 @@ function deferredLeaf(options: { holdCompletion?: boolean } = {}) {
     }),
   };
   return { finish, leaf, releaseCompletion, reveals };
+}
+
+async function registeredPreview(
+  leaves: DeferredLeaf[],
+  factory: (leaf: WorkspaceLeaf) => unknown,
+  sourcePath: string,
+): Promise<TypstPreviewView> {
+  const leaf: DeferredLeaf = {
+    view: {},
+    detach: vi.fn(),
+    openFile: vi.fn(),
+  };
+  const view = factory(leaf as unknown as WorkspaceLeaf);
+  if (!(view instanceof TypstPreviewView)) {
+    throw new Error("Preview view factory returned the wrong view type.");
+  }
+  leaf.view = view;
+  leaves.push(leaf);
+  await view.setState({ sourcePath }, {} as never);
+  return view;
+}
+
+async function closeRegisteredPreview(
+  leaves: DeferredLeaf[],
+  view: TypstPreviewView,
+): Promise<void> {
+  await (view as unknown as { onClose(): Promise<void> }).onClose();
+  const index = leaves.findIndex((leaf) => leaf.view === view);
+  if (index >= 0) leaves.splice(index, 1);
 }
 
 describe("TypstianPlugin vault dependency invalidation", () => {
@@ -90,6 +123,52 @@ describe("TypstianPlugin vault dependency invalidation", () => {
     expect(preview.follow).toHaveBeenLastCalledWith("book/new.typ");
     expect(preview.refresh).not.toHaveBeenCalled();
     expect(internals.dependencies.affectedBy("/vault/book/section.typ")).toEqual([]);
+  });
+
+  it("drops dependency edges when the last preview for an entry closes", async () => {
+    const leaves: DeferredLeaf[] = [];
+    const {
+      internals,
+      plugin,
+      vaultCallbacks,
+      viewFactories,
+    } = harness(leaves);
+    await plugin.onload();
+    const factory = viewFactories.get(TYPST_PREVIEW_VIEW_TYPE);
+    if (factory === undefined) throw new Error("Preview view factory was not registered.");
+
+    const preview = await registeredPreview(leaves, factory, "book/main.typ");
+    internals.dependencies.update("book/main.typ", ["/vault/book/image.svg"]);
+    await closeRegisteredPreview(leaves, preview);
+
+    const reopened = await registeredPreview(leaves, factory, "book/main.typ");
+    const refresh = vi.spyOn(reopened, "refresh");
+    vaultCallbacks.get("create")?.(fileAt("book/image.svg"));
+
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it("keeps dependency edges while another preview for the entry remains open", async () => {
+    const leaves: DeferredLeaf[] = [];
+    const {
+      internals,
+      plugin,
+      vaultCallbacks,
+      viewFactories,
+    } = harness(leaves);
+    await plugin.onload();
+    const factory = viewFactories.get(TYPST_PREVIEW_VIEW_TYPE);
+    if (factory === undefined) throw new Error("Preview view factory was not registered.");
+
+    const first = await registeredPreview(leaves, factory, "book/main.typ");
+    const remaining = await registeredPreview(leaves, factory, "book/main.typ");
+    internals.dependencies.update("book/main.typ", ["/vault/book/image.svg"]);
+    await closeRegisteredPreview(leaves, first);
+
+    const refresh = vi.spyOn(remaining, "refresh");
+    vaultCallbacks.get("create")?.(fileAt("book/image.svg"));
+
+    expect(refresh).toHaveBeenCalledOnce();
   });
 });
 
@@ -218,8 +297,10 @@ function harness(leaves: DeferredLeaf[]) {
   const vaultCallbacks = new Map<string, (...args: unknown[]) => void>();
   const workspace = {
     activeLeaf: { id: "preview" } as unknown,
-    getLeavesOfType: vi.fn(() => leaves.filter(
-      (leaf) => leaf.view instanceof TypstEditorView,
+    getLeavesOfType: vi.fn((type: string) => leaves.filter(
+      (leaf) => type === TYPST_PREVIEW_VIEW_TYPE
+        ? leaf.view instanceof TypstPreviewView
+        : leaf.view instanceof TypstEditorView,
     )),
     getLeaf: vi.fn(() => {
       const leaf = leaves.find((candidate) => candidate.openFile.mock.calls.length === 0);
@@ -279,6 +360,10 @@ function harness(leaves: DeferredLeaf[]) {
   const app = { vault, workspace };
   const plugin = new TypstianPlugin(app as never, {} as never);
   const commands = new Map<string, Command>();
+  const viewFactories = new Map<string, (leaf: WorkspaceLeaf) => unknown>();
+  vi.spyOn(plugin, "registerView").mockImplementation((type, creator) => {
+    viewFactories.set(type, creator);
+  });
   vi.spyOn(plugin, "addCommand").mockImplementation((command) => {
     commands.set(command.id, command);
     return command;
@@ -312,6 +397,7 @@ function harness(leaves: DeferredLeaf[]) {
     plugin,
     vault,
     vaultCallbacks,
+    viewFactories,
     workspace,
   };
 }
