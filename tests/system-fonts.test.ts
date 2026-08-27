@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   MAX_FONTCONFIG_FILE_BYTES,
   MAX_FONTCONFIG_FRAGMENTS,
+  MAX_FONTCONFIG_INCLUDE_DEPTH,
   MAX_SYSTEM_FONT_BYTES,
   registerSystemFonts,
   systemFontDirectories,
@@ -336,6 +337,28 @@ describe("system font directories", () => {
     expect(directories).toContain("/opt/cycle-second");
     expect(reads.filter((file) => file === first)).toHaveLength(1);
     expect(reads.filter((file) => file === second)).toHaveLength(1);
+  });
+
+  it("stops following a straight include chain at the depth bound", () => {
+    // No cycle here, so the visited set never fires: only the depth bound can
+    // stop this. The chain is one longer than the bound allows.
+    const chain = (index: number) => `/opt/chain/${index}.conf`;
+    const files: Record<string, string> = {};
+    for (let index = 0; index <= MAX_FONTCONFIG_INCLUDE_DEPTH + 1; index += 1) {
+      files[chain(index)] =
+        `<fontconfig><dir>/opt/depth-${index}</dir><include>${chain(index + 1)}</include></fontconfig>`;
+    }
+
+    const directories = withFontconfig({}, () =>
+      withVirtualFontconfig(files, () => {
+        vi.stubEnv("FONTCONFIG_FILE", chain(0));
+        return withPlatform("linux", () => systemFontDirectories());
+      }),
+    );
+
+    expect(directories).toContain("/opt/depth-0");
+    expect(directories).toContain(`/opt/depth-${MAX_FONTCONFIG_INCLUDE_DEPTH}`);
+    expect(directories).not.toContain(`/opt/depth-${MAX_FONTCONFIG_INCLUDE_DEPTH + 1}`);
   });
 
   it("follows an ignore_missing include, a ~ include, and a directory include", () => {
