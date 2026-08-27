@@ -9,6 +9,29 @@ import {
 } from "../src/system-fonts";
 
 describe("system font loading", () => {
+  it("registers a font the residency plan cannot fit, without retaining it", async () => {
+    const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "typstian-font-"));
+    try {
+      const kept = path.join(temporary, "kept.ttf");
+      const skipped = path.join(temporary, "skipped.ttf");
+      fs.writeFileSync(kept, "x".repeat(1024));
+      fs.writeFileSync(skipped, "y".repeat(512));
+      const registerFont = vi.fn((_path: string, _bytes: Uint8Array, _resident: boolean) => 1);
+
+      // A cap that only the larger file fits: the smaller one must still reach
+      // the compiler, just without its bytes being held.
+      await registerSystemFonts([temporary], registerFont, undefined, 1024);
+
+      const residency = new Map(
+        registerFont.mock.calls.map(([fontPath, , resident]) => [fontPath, resident]),
+      );
+      expect(residency.get(fs.realpathSync(kept))).toBe(true);
+      expect(residency.get(fs.realpathSync(skipped))).toBe(false);
+    } finally {
+      fs.rmSync(temporary, { recursive: true, force: true });
+    }
+  });
+
   it("registers every font in nested system directories", async () => {
     const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "typstian-font-"));
     try {

@@ -34,11 +34,14 @@ class FakeBrowserWorker {
   static vaultPaths: string[] = [];
   static packagePaths: string[] = [];
   static fontPaths: string[] = [];
+  static residentFontBytes = 0;
+  static batches = 1;
 
   readonly messages: Array<Record<string, unknown>> = [];
   readonly terminate = vi.fn();
   private readonly listeners = new Map<string, Set<WorkerListener>>();
   private compileRequestId: number | undefined;
+  private sentBatches = 0;
 
   constructor(readonly url: string) {
     FakeBrowserWorker.instances.push(this);
@@ -62,15 +65,8 @@ class FakeBrowserWorker {
     }
     if (message.type === "request" && message.method === "compile") {
       this.compileRequestId = Number(message.id);
-      queueMicrotask(() => this.emit("message", {
-        data: {
-          type: "need-inputs",
-          batchId: 1,
-          vaultPaths: FakeBrowserWorker.vaultPaths,
-          packagePaths: FakeBrowserWorker.packagePaths,
-          fontPaths: FakeBrowserWorker.fontPaths,
-        },
-      }));
+      this.sentBatches = 0;
+      this.needInputs();
       return;
     }
     if (message.type === "inputs" && typeof message.error === "string") {
@@ -78,8 +74,27 @@ class FakeBrowserWorker {
       return;
     }
     if (message.type === "inputs" && message.done === true) {
+      if (this.sentBatches < FakeBrowserWorker.batches) {
+        this.needInputs();
+        return;
+      }
       this.respond(this.compileRequestId!, "compiled");
     }
+  }
+
+  private needInputs(): void {
+    this.sentBatches += 1;
+    const batchId = this.sentBatches;
+    queueMicrotask(() => this.emit("message", {
+      data: {
+        type: "need-inputs",
+        batchId,
+        vaultPaths: FakeBrowserWorker.vaultPaths,
+        packagePaths: FakeBrowserWorker.packagePaths,
+        fontPaths: FakeBrowserWorker.fontPaths,
+        residentFontBytes: FakeBrowserWorker.residentFontBytes,
+      },
+    }));
   }
 
   emit(type: string, event: { data?: unknown; message?: string }): void {
@@ -120,6 +135,8 @@ describe("browser worker WASM engine", () => {
     FakeBrowserWorker.vaultPaths = [];
     FakeBrowserWorker.packagePaths = [];
     FakeBrowserWorker.fontPaths = [];
+    FakeBrowserWorker.residentFontBytes = 0;
+    FakeBrowserWorker.batches = 1;
     host.readVault.mockReset();
     host.readPackage.mockReset();
     host.readFont.mockReset();
@@ -195,6 +212,41 @@ describe("browser worker WASM engine", () => {
       [{ kind: "vault", path: "main.typ" }],
       [{ kind: "package", path: "preview/greet/0.1.0/typst.toml" }],
     ]);
+    engine.dispose();
+  });
+
+  it("charges the worker's resident fonts to the 128 MiB selected-font budget", async () => {
+    FakeBrowserWorker.fontPaths = ["/fonts/big.ttf"];
+    FakeBrowserWorker.residentFontBytes = 100 * 1024 * 1024;
+    host.readFont.mockResolvedValue(sizedBytes(40 * 1024 * 1024));
+    const engine = await createWasmEngine({
+      rootPath: temporary,
+      wasmPath,
+      maxOutputBytes: 70 * 1024 * 1024,
+    });
+
+    // Bytes the worker already holds and bytes the host ships share one
+    // ceiling, so 100 MiB retained plus 40 MiB shipped must not pass.
+    await expect(engine.compile({ revision: 1, entryPath: "main.typ" })).rejects.toThrow(
+      "Typstian selected fonts exceeded the 128 MiB limit.",
+    );
+    engine.dispose();
+  });
+
+  it("charges the resident fonts once per compile, not once per input batch", async () => {
+    FakeBrowserWorker.fontPaths = ["/fonts/big.ttf"];
+    FakeBrowserWorker.residentFontBytes = 100 * 1024 * 1024;
+    FakeBrowserWorker.batches = 2;
+    host.readFont.mockImplementation(() => Promise.resolve(new Uint8Array(10 * 1024 * 1024)));
+    const engine = await createWasmEngine({
+      rootPath: temporary,
+      wasmPath,
+      maxOutputBytes: 70 * 1024 * 1024,
+    });
+
+    // The worker declares the same retained bytes on every batch; debiting
+    // them twice would leave no budget for the 20 MiB it then ships.
+    await expect(engine.compile({ revision: 1, entryPath: "main.typ" })).resolves.toBe("compiled");
     engine.dispose();
   });
 

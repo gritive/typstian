@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { planFontResidency, type FontResidencyCandidate } from "./font-residency";
+import { MAX_RESIDENT_FONT_BYTES, planFontResidency, type FontResidencyCandidate } from "./font-residency";
 
 export const MAX_SYSTEM_FONT_BYTES = 64 * 1024 * 1024;
 
@@ -115,6 +115,9 @@ export async function registerSystemFonts(
     resident: boolean,
   ) => number | Promise<number>,
   signal?: AbortSignal,
+  // Injectable so a test can exercise the skipped-candidate branch without a
+  // 256 MiB fixture corpus.
+  residencyCapBytes: number = MAX_RESIDENT_FONT_BYTES,
 ): Promise<RegisteredSystemFonts> {
   // Discovery and sizing run first so the residency plan can rank the whole
   // corpus before any file is read; every candidate is still read exactly once.
@@ -143,7 +146,7 @@ export async function registerSystemFonts(
     plannedBytes += candidate.byteLength;
     readable.push(candidate);
   }
-  const resident = planFontResidency(readable);
+  const resident = planFontResidency(readable, residencyCapBytes);
 
   const allowed = new Set<string>();
   let scannedBytes = 0;
@@ -151,6 +154,10 @@ export async function registerSystemFonts(
   for (const candidate of readable) {
     throwIfAborted(signal);
     try {
+      // The sizing pass ran before the plan, so re-check the file right before
+      // reading it: discovery may have walked thousands of entries since, and
+      // reading what is no longer a regular file can block instead of failing.
+      if (!isUsableFont(await fs.promises.stat(candidate.path))) continue;
       const bytes = await fs.promises.readFile(candidate.path, { signal });
       throwIfAborted(signal);
       if (bytes.byteLength > MAX_SYSTEM_FONT_BYTES) continue;
