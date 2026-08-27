@@ -319,6 +319,7 @@ export default class TypstianPlugin extends Plugin {
       },
       onDiagnostic: (diagnostic) => { void this.revealDiagnostic(diagnostic); },
       onSourceLocation: (location, isCurrent) => this.revealSourceLocation(location, isCurrent),
+      savePdf: (sourcePath) => this.savePdf(sourcePath),
       disposeBackend: () => {
         closeCompiler();
         this.noteCompileStatus({ type: "disposed", preview: previewId });
@@ -516,7 +517,7 @@ private handleVaultPath(vaultPath: string, includeDirectEntry = true): void {
     try {
       savedText = await this.app.vault.read(file);
     } catch {
-      if (isCurrent()) new Notice("Unable to read the Typst source for forward search.");
+      if (isCurrent()) new Notice("Unable to read the Typst source to reveal the matching spot in the preview.");
       return;
     }
     if (!isCurrent()) return;
@@ -526,14 +527,14 @@ private handleVaultPath(vaultPath: string, includeDirectEntry = true): void {
       savedText,
       request
     )) {
-      new Notice("Save the Typst file before using forward search.");
+      new Notice("Save the Typst file to reveal the matching spot in the preview.");
       return;
     }
 
     const preview = this.previewForSource(request.sourcePath);
     if (!isCurrent()) return;
     if (preview === undefined) {
-      new Notice("Open a preview containing this Typst source before using forward search.");
+      new Notice("Open a preview of this Typst source to reveal the matching spot in it.");
       return;
     }
 
@@ -646,7 +647,7 @@ private handleVaultPath(vaultPath: string, includeDirectEntry = true): void {
       && isCurrent()
       && !editor.revealByteOffset(location.byteOffset)
     ) {
-      new Notice("The inverse-search location is no longer valid for the current file.");
+      new Notice("That source location is no longer valid for the current file.");
     }
   }
 

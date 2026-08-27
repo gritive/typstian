@@ -677,3 +677,107 @@ describe("TypstianPlugin completion routing", () => {
     plugin.onunload();
   });
 });
+
+describe("TypstianPlugin user-facing wording", () => {
+  function noticeHarness() {
+    const { internals, plugin, vault } = harness([]);
+    const wording = internals as unknown as {
+      handleForwardSearch(
+        editor: unknown,
+        request: { sourcePath: string; sourceText: string; byteOffset: number },
+        isCurrent: () => boolean,
+      ): Promise<void>;
+    };
+    const notices = (Notice as unknown as { messages: string[] }).messages;
+    notices.length = 0;
+    const editor = {
+      file: fileAt("book/main.typ"),
+      getViewData: () => "= Draft\n",
+    };
+    const request = {
+      sourcePath: "book/main.typ",
+      sourceText: "= Draft\n",
+      byteOffset: 2,
+    };
+    return { editor, notices, plugin, request, vault, wording };
+  }
+
+  it("asks for a save without naming forward search", async () => {
+    const { editor, notices, plugin, request, vault, wording } = noticeHarness();
+    await plugin.onload();
+    vault.read.mockResolvedValue("= Saved\n");
+
+    await wording.handleForwardSearch(editor, request, () => true);
+
+    expect(notices).toEqual([
+      "Save the Typst file to reveal the matching spot in the preview."
+    ]);
+    plugin.onunload();
+  });
+
+  it("asks for a preview without naming forward search", async () => {
+    const { editor, notices, plugin, request, vault, wording } = noticeHarness();
+    await plugin.onload();
+    vault.read.mockResolvedValue("= Draft\n");
+
+    await wording.handleForwardSearch(editor, request, () => true);
+
+    expect(notices).toEqual([
+      "Open a preview of this Typst source to reveal the matching spot in it."
+    ]);
+    plugin.onunload();
+  });
+
+  it("reports an unreadable source without naming forward search", async () => {
+    const { editor, notices, plugin, request, vault, wording } = noticeHarness();
+    await plugin.onload();
+    vault.read.mockRejectedValue(new Error("nope"));
+
+    await wording.handleForwardSearch(editor, request, () => true);
+
+    expect(notices).toEqual([
+      "Unable to read the Typst source to reveal the matching spot in the preview."
+    ]);
+    plugin.onunload();
+  });
+
+  it("reports a stale preview click without naming inverse search", async () => {
+    const sourceLeaf = deferredLeaf();
+    const { internals, plugin } = harness([sourceLeaf.leaf]);
+    const notices = (Notice as unknown as { messages: string[] }).messages;
+    notices.length = 0;
+    await plugin.onload();
+
+    const navigation = internals.revealSourceLocation(
+      { path: "book/section.typ", byteOffset: 4096 },
+      () => true,
+    );
+    sourceLeaf.finish();
+    await navigation;
+
+    expect(notices).toEqual([
+      "That source location is no longer valid for the current file."
+    ]);
+    plugin.onunload();
+  });
+});
+
+describe("TypstianPlugin preview wiring", () => {
+  it("gives the preview the same save path as the command", async () => {
+    const { internals, plugin } = harness([]);
+    const wiring = internals as unknown as {
+      createPreviewView(leaf: unknown): unknown;
+      savePdf(sourcePath: string): Promise<void>;
+    };
+    const savePdf = vi.spyOn(wiring, "savePdf").mockResolvedValue(undefined);
+    await plugin.onload();
+
+    const view = wiring.createPreviewView({}) as {
+      options: { savePdf?: (sourcePath: string) => void | Promise<void> };
+    };
+    await view.options.savePdf?.("book/main.typ");
+
+    expect(savePdf).toHaveBeenCalledWith("book/main.typ");
+    plugin.onunload();
+  });
+});

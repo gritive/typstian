@@ -555,4 +555,136 @@ describe("TypstPreviewView", () => {
 
     expect(disposeBackend).toHaveBeenCalledOnce();
   });
+
+  it("saves the compiled PDF from the toolbar", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext")
+      .mockReturnValue({} as CanvasRenderingContext2D);
+    const { engine } = makePdfEngine(1);
+    const savePdf = vi.fn();
+    const view = new TestPreviewView({} as WorkspaceLeaf, {
+      compile: vi.fn().mockResolvedValue(success()),
+      jump: vi.fn(),
+      forward: vi.fn(),
+      complete: vi.fn(),
+      onSourceLocation: vi.fn(),
+      onCompiled: vi.fn(),
+      onDiagnostic: vi.fn(),
+      disposeBackend: vi.fn(),
+      pdfEngine: engine,
+      savePdf,
+      requestSaveLayout: () => undefined
+    });
+    await view.setState({ sourcePath: "book/main.typ", zoom: 1, fit: false }, {} as never);
+    await view.open();
+
+    const button = view.contentEl.querySelector<HTMLButtonElement>(
+      "button[aria-label='Save the compiled PDF to the vault']"
+    );
+    expect(button).not.toBeNull();
+    expect(button!.disabled).toBe(false);
+    button!.click();
+
+    expect(savePdf).toHaveBeenCalledWith("book/main.typ");
+    await view.close();
+  });
+
+  it("cannot save while the preview follows no Typst source", async () => {
+    const { engine } = makePdfEngine(1);
+    const savePdf = vi.fn();
+    const view = new TestPreviewView({} as WorkspaceLeaf, {
+      compile: vi.fn(),
+      jump: vi.fn(),
+      forward: vi.fn(),
+      complete: vi.fn(),
+      onSourceLocation: vi.fn(),
+      onCompiled: vi.fn(),
+      onDiagnostic: vi.fn(),
+      disposeBackend: vi.fn(),
+      pdfEngine: engine,
+      savePdf,
+      requestSaveLayout: () => undefined
+    });
+    await view.open();
+
+    const button = view.contentEl.querySelector<HTMLButtonElement>(
+      "button[aria-label='Save the compiled PDF to the vault']"
+    );
+    expect(button?.disabled).toBe(true);
+    button!.click();
+
+    expect(savePdf).not.toHaveBeenCalled();
+    await view.close();
+  });
+
+  it("disables the save button while a save runs, so no second one starts", async () => {
+    const { engine } = makePdfEngine(1);
+    let finishSave!: () => void;
+    const savePdf = vi.fn(() => new Promise<void>((resolve) => { finishSave = resolve; }));
+    const view = new TestPreviewView({} as WorkspaceLeaf, {
+      compile: vi.fn().mockResolvedValue(success()),
+      jump: vi.fn(),
+      forward: vi.fn(),
+      complete: vi.fn(),
+      onSourceLocation: vi.fn(),
+      onCompiled: vi.fn(),
+      onDiagnostic: vi.fn(),
+      disposeBackend: vi.fn(),
+      pdfEngine: engine,
+      savePdf,
+      requestSaveLayout: () => undefined
+    });
+    await view.setState({ sourcePath: "book/main.typ", zoom: 1, fit: false }, {} as never);
+    await view.open();
+    const button = view.contentEl.querySelector<HTMLButtonElement>(
+      "button[aria-label='Save the compiled PDF to the vault']"
+    )!;
+
+    button.click();
+    await Promise.resolve();
+    expect(button.disabled).toBe(true);
+    expect(button.textContent).toBe("Saving…");
+
+    button.click();
+    expect(savePdf).toHaveBeenCalledTimes(1);
+
+    finishSave();
+    await vi.waitFor(() => { expect(button.disabled).toBe(false); });
+    expect(button.textContent).toBe("Save");
+
+    button.click();
+    expect(savePdf).toHaveBeenCalledTimes(2);
+    await view.close();
+  });
+
+  it("frees the save button again when the save fails", async () => {
+    const { engine } = makePdfEngine(1);
+    const savePdf = vi.fn(() => Promise.reject(new Error("no room in the vault")));
+    const view = new TestPreviewView({} as WorkspaceLeaf, {
+      compile: vi.fn().mockResolvedValue(success()),
+      jump: vi.fn(),
+      forward: vi.fn(),
+      complete: vi.fn(),
+      onSourceLocation: vi.fn(),
+      onCompiled: vi.fn(),
+      onDiagnostic: vi.fn(),
+      disposeBackend: vi.fn(),
+      pdfEngine: engine,
+      savePdf,
+      requestSaveLayout: () => undefined
+    });
+    await view.setState({ sourcePath: "book/main.typ", zoom: 1, fit: false }, {} as never);
+    await view.open();
+    const button = view.contentEl.querySelector<HTMLButtonElement>(
+      "button[aria-label='Save the compiled PDF to the vault']"
+    )!;
+
+    button.click();
+    await Promise.resolve();
+    expect(button.textContent).toBe("Saving…");
+
+    await vi.waitFor(() => { expect(button.textContent).toBe("Save"); });
+    expect(button.disabled).toBe(false);
+    await view.close();
+  });
 });

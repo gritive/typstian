@@ -39,6 +39,7 @@ export interface TypstPreviewViewOptions {
     isCurrent: () => boolean,
   ) => void | Promise<void>;
   disposeBackend: () => void | Promise<void>;
+  savePdf?: (sourcePath: string) => void | Promise<void>;
   restartBackend?: () => void | Promise<void>;
   pdfEngine?: PdfEngine;
   requestSaveLayout: () => void;
@@ -52,6 +53,8 @@ export class TypstPreviewView extends ItemView {
   private activeRevision: number | null = null;
   private jumpAbort: AbortController | null = null;
   private closed = false;
+  private saveButton: HTMLButtonElement | null = null;
+  private savingPdf: Promise<void> | null = null;
 
   private forwardAbort: AbortController | null = null;
   private completeAbort: AbortController | null = null;
@@ -98,6 +101,7 @@ export class TypstPreviewView extends ItemView {
     this.renderer?.setSourcePath(normalized);
     this.controller?.setSource(normalized);
     void this.renderer?.render({ status: "idle" });
+    this.syncSaveButton();
     if (normalized !== null) this.controller?.notifySaved(normalized);
   }
 
@@ -236,6 +240,16 @@ export class TypstPreviewView extends ItemView {
       "Fit pages to the preview width",
       () => this.renderer?.fitToWidth(),
     );
+    // Saving needs a source, not a rendered document: it compiles the current
+    // source afresh and reports its own failures, so the only state that can
+    // make the action meaningless is a preview following nothing.
+    this.saveButton = this.createToolbarButton(
+      toolbar,
+      "Save",
+      "Save the compiled PDF to the vault",
+      () => this.saveCompiledPdf(),
+    );
+    this.syncSaveButton();
 
     const pages = this.contentEl.createDiv({ cls: "typst-preview-pages" });
     this.mountRenderer(pages);
@@ -251,6 +265,7 @@ export class TypstPreviewView extends ItemView {
     this.controller = null;
     const renderer = this.renderer;
     this.renderer = null;
+    this.saveButton = null;
     await Promise.all([
       renderer?.dispose() ?? Promise.resolve(),
       Promise.resolve(this.options.disposeBackend())
@@ -358,6 +373,43 @@ export class TypstPreviewView extends ItemView {
     this.forwardAbort = null;
     this.completeAbort?.abort();
     this.completeAbort = null;
+  }
+
+  /**
+   * A save is not idempotent — each one writes the next free `name-N.pdf` —
+   * and a cold one pays worker start-up and a first compile behind it, on its
+   * own compiler client. So a click made during that wait must not start a
+   * second save: a second click means "did it hear me", not "save it twice".
+   */
+  private saveCompiledPdf(): Promise<void> {
+    const sourcePath = this.state.sourcePath;
+    if (sourcePath === null) return Promise.resolve();
+    // The save reports its own outcome; the button only owes the user the fact
+    // that it is still running, on the failing path as much as the happy one.
+    // Hence the returned promise is outcome-blind — it always resolves
+    // `undefined`, whether the PDF landed or the compile failed — and settles
+    // only to say the button is free again. Read the result from `savePdf`.
+    const running = Promise.resolve(this.options.savePdf?.(sourcePath))
+      .then(() => undefined, () => undefined)
+      .finally(() => {
+        this.savingPdf = null;
+        this.syncSaveButton();
+      });
+    this.savingPdf = running;
+    // Disabling here, before the handler yields, is what stops a second save:
+    // a disabled button dispatches no click, so this is the only re-entry
+    // guard the one caller below needs.
+    this.syncSaveButton();
+    return running;
+  }
+
+  private syncSaveButton(): void {
+    const button = this.saveButton;
+    if (button === null) return;
+    const saving = this.savingPdf !== null;
+    button.disabled = saving || this.state.sourcePath === null;
+    button.textContent = saving ? "Saving…" : "Save";
+    button.setAttribute("aria-busy", saving ? "true" : "false");
   }
 
   private createToolbarButton(
