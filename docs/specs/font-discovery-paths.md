@@ -61,7 +61,10 @@ and the environment.
   an include and `$XDG_DATA_HOME` for a directory, and the stock
   `/etc/fonts/fonts.conf` ships
   `<include ignore_missing="yes" prefix="xdg">fontconfig/conf.d</include>`
-  relying on it. A target that is a directory contributes its `*.conf`
+  relying on it. A relative include target — plain, or marked
+  `prefix="relative"` — resolves against the directory of the file that declares
+  it, as fontconfig does; `<include>conf.d</include>` is legal and common. This
+  is an include-only rule: a relative `<dir>` stays dropped under AC6. A target that is a directory contributes its `*.conf`
   files. A configuration that includes itself, directly or in a cycle,
   terminates: recursion stops at `MAX_FONTCONFIG_INCLUDE_DEPTH` and a file
   already read is never read twice. Without `<include>`, a dotfile setup whose
