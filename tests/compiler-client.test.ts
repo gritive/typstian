@@ -490,6 +490,41 @@ it("passes the pinned overlay snapshot to the engine compile request", async () 
     }
   });
 
+  it("gives the first compile of a session a wider deadline than the next one", async () => {
+    vi.useFakeTimers();
+    try {
+      const { client, engines } = harness({ timeoutMs: 25 });
+      const first = client.compile({ revision: 1, entryPath: "main.typ" });
+      await vi.advanceTimersByTimeAsync(0);
+
+      // A cold session pays for font residency and a first layout pass, so the
+      // steady-state budget alone must not kill it.
+      await vi.advanceTimersByTimeAsync(25);
+      expect(engines[0]?.dispose).not.toHaveBeenCalled();
+
+      engines[0]!.respond({
+        type: "compiled",
+        revision: 1,
+        pdfBase64: pdf.toString("base64"),
+        pdfBytes: pdf.length,
+        pages: [{ widthPt: 240, heightPt: 180 }],
+        dependencies: ["main.typ"],
+        diagnostics: [],
+      });
+      await expect(first).resolves.toMatchObject({ ok: true, revision: 1 });
+
+      const second = client.compile({ revision: 2, entryPath: "main.typ" });
+      const rejection = expect(second).rejects.toMatchObject({ code: "timeout" });
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(25);
+      await rejection;
+      expect(engines[0]!.dispose).toHaveBeenCalledOnce();
+      client.close();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it.each([
     ["invalid JSON", "not-json"],
     [

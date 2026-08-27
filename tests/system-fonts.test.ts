@@ -24,8 +24,16 @@ describe("system font loading", () => {
       const fonts = await registerSystemFonts([temporary, temporary], registerFont);
 
       expect(registerFont).toHaveBeenCalledTimes(2);
-      expect(registerFont).toHaveBeenCalledWith(fs.realpathSync(first), Buffer.from("first font"));
-      expect(registerFont).toHaveBeenCalledWith(fs.realpathSync(second), Buffer.from("second font"));
+      expect(registerFont).toHaveBeenCalledWith(
+        fs.realpathSync(first),
+        Buffer.from("first font"),
+        true,
+      );
+      expect(registerFont).toHaveBeenCalledWith(
+        fs.realpathSync(second),
+        Buffer.from("second font"),
+        true,
+      );
       expect(fonts.readSync(fs.realpathSync(first))).toEqual(Buffer.from("first font"));
       await expect(fonts.read(fs.realpathSync(second))).resolves.toEqual(
         Buffer.from("second font"),

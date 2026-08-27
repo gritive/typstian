@@ -118,10 +118,53 @@ and embeds the result in `main.js`; Community releases contain only `main.js`,
   load through an allowlisted callback only for the active compile, capped at
   128 MiB in aggregate. Keep network,
   telemetry, native process launch, and compiler downloads out of the plugin.
+- **Font residency, `src/font-residency.ts`.** Registration hands the compiler
+  metadata only, so without residency the first compile of a session lays the
+  whole document out with no loadable face and Typst rescans the entire font book
+  for every uncovered run — 22 s on a 126 KB Korean book against 983 faces,
+  versus 0.3 s once the bytes are there. `planFontResidency` picks, from the
+  files `registerSystemFonts` reads anyway, the set the worker keeps after
+  `register-font`; the transferred buffer is retained, never re-read. Ranking is
+  discovery root ascending (`systemFontDirectories()` lists the user's own
+  directories first) then file size descending (the fallback walk ends on
+  broad-coverage CJK faces, which are the largest files); a candidate that does
+  not fit is skipped so the cheap tail still fills the budget.
+  `MAX_RESIDENT_FONT_BYTES` is 256 MiB — a cold-start ceiling on *unproven*
+  candidates, not `MAX_SYSTEM_FONT_SCAN_BYTES`, which only bounds how much the
+  host may read. 256 MiB is the measured knee on a 866 MiB / 983-face macOS
+  corpus: 96, 128, and 192 MiB all still miss a needed face and leave the first
+  compile at 7-9 s.
+- **Residency is a transient, not a per-preview tax.** A `WorkerWasmEngine` is
+  per preview, so a cold-start set that never shrank would cost N x 256 MiB
+  across N open previews. `settleResidency` therefore runs in the compile's
+  `finally` — *after* it settles, because the first compile is the pass the
+  residency exists for — and `retainUsedFonts` keeps only the faces that compile
+  actually read, which the seeded cache records as `readFont` hits. The 126 KB
+  Korean book falls from 256 MiB peak to 43 MiB steady. A failed compile evicts
+  too, so the buffers never outlive the compile that would have proved them; a
+  later cold session starts empty and gets the full cold-start set again. An
+  evicted face that turns out to be needed later comes back through the ordinary
+  host request path — never a second disk read inside one session.
+- **The residency lives inside the 128 MiB selected-font budget.** Survivors are
+  capped at `MAX_SELECTED_FONT_BYTES`, the same number `providePath` charges
+  host-shipped font bytes against for one compile, and the worker declares its
+  proven `residentFontBytes` on every `need-inputs` so `provideInputs` subtracts
+  them from that compile's budget once. Retained and shipped bytes therefore
+  share one ceiling instead of each holding their own. Cold-start bytes are
+  declared as 0 on purpose: they are governed by `MAX_RESIDENT_FONT_BYTES`, they
+  are gone once the compile settles, and charging them would starve the very
+  compile that has to fetch whatever the bet missed. The instantaneous ceiling
+  during a cold compile is therefore 384 MiB, not 256: the unproven set plus a
+  full host-shipped budget. Both halves are gone by the time it settles.
 - Obsidian's Electron renderer cannot create Node `worker_threads`; the release
   uses an embedded browser Web Worker instead. WASM calls remain synchronous only
   inside that worker. Initialization has a 120-second deadline; each compile has a
-  15-second deadline. Timeout or abort terminates the worker and its retained
+  15-second deadline, except the first compile of a session, which
+  `src/compile-deadline.ts` widens by `COLD_COMPILE_DEADLINE_MULTIPLIER` (4x, so
+  60 s) because a cold session pays for font residency and a first layout pass
+  that a warm one does not. Missing that deadline is not a cheap retry: it
+  disposes the engine, so the next attempt starts colder still.
+  Timeout or abort terminates the worker and its retained
   document; the next request starts a clean session. PDF bytes cross the WASM boundary directly as an `ArrayBuffer`; the worker
   transfers it without a renderer-side copy.
 - **Only the math face is embedded.** `helper/wasm/assets/NewCMMath-Book.otf` is

@@ -2,6 +2,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
+import { planFontResidency, type FontResidencyCandidate } from "./font-residency";
+
 export const MAX_SYSTEM_FONT_BYTES = 64 * 1024 * 1024;
 
 export const MAX_SYSTEM_FONT_FILES = 10_000;
@@ -14,16 +16,25 @@ export interface RegisteredSystemFonts {
   read(fontPath: string, signal?: AbortSignal): Promise<Uint8Array | undefined>;
 }
 
-async function discoverFontFiles(directories: readonly string[]): Promise<string[]> {
-  const pending = [...new Set(directories)];
+interface DiscoveredFont {
+  readonly path: string;
+  readonly root: number;
+}
+
+async function discoverFontFiles(
+  directories: readonly string[],
+): Promise<DiscoveredFont[]> {
+  // The root index travels with each directory so the residency plan can rank
+  // the user's own font directories ahead of the ones the OS ships.
+  const pending = [...new Set(directories)].map((directory, root) => ({ directory, root }));
   const visitedDirectories = new Set<string>();
-  const fonts = new Set<string>();
+  const fonts = new Map<string, number>();
 
   while (pending.length > 0 && fonts.size < MAX_SYSTEM_FONT_FILES) {
-    const directory = pending.shift();
-    if (!directory) break;
+    const next = pending.shift();
+    if (!next) break;
     try {
-      const canonicalDirectory = await fs.promises.realpath(directory);
+      const canonicalDirectory = await fs.promises.realpath(next.directory);
       if (visitedDirectories.has(canonicalDirectory)) continue;
       visitedDirectories.add(canonicalDirectory);
       const entries = await fs.promises.readdir(canonicalDirectory, { withFileTypes: true });
@@ -31,14 +42,14 @@ async function discoverFontFiles(directories: readonly string[]): Promise<string
       for (const entry of entries) {
         const candidate = path.join(canonicalDirectory, entry.name);
         if (entry.isDirectory()) {
-          pending.push(candidate);
+          pending.push({ directory: candidate, root: next.root });
           continue;
         }
         if (!entry.isFile() && !entry.isSymbolicLink()) continue;
         if (!FONT_EXTENSIONS.has(path.extname(entry.name).toLowerCase())) continue;
         try {
           const canonicalFont = await fs.promises.realpath(candidate);
-          fonts.add(canonicalFont);
+          if (!fonts.has(canonicalFont)) fonts.set(canonicalFont, next.root);
           if (fonts.size >= MAX_SYSTEM_FONT_FILES) break;
         } catch {
           // Broken and disappearing font links are skipped.
@@ -49,7 +60,7 @@ async function discoverFontFiles(directories: readonly string[]): Promise<string
     }
   }
 
-  return [...fonts];
+  return [...fonts].map(([fontPath, root]) => ({ path: fontPath, root }));
 }
 
 function throwIfAborted(signal?: AbortSignal): void {
@@ -98,24 +109,51 @@ function registeredFontReader(allowed: ReadonlySet<string>): RegisteredSystemFon
 
 export async function registerSystemFonts(
   directories: readonly string[],
-  registerFont: (fontPath: string, bytes: Uint8Array) => number | Promise<number>,
+  registerFont: (
+    fontPath: string,
+    bytes: Uint8Array,
+    resident: boolean,
+  ) => number | Promise<number>,
   signal?: AbortSignal,
 ): Promise<RegisteredSystemFonts> {
+  // Discovery and sizing run first so the residency plan can rank the whole
+  // corpus before any file is read; every candidate is still read exactly once.
+  const candidates: FontResidencyCandidate[] = [];
+  for (const discovered of await discoverFontFiles(directories)) {
+    throwIfAborted(signal);
+    try {
+      const stat = await fs.promises.stat(discovered.path);
+      if (!isUsableFont(stat)) continue;
+      candidates.push({
+        path: discovered.path,
+        byteLength: stat.size,
+        root: discovered.root,
+      });
+    } catch {
+      throwIfAborted(signal);
+      // Unreadable and disappearing fonts are skipped.
+    }
+  }
+  const resident = planFontResidency(candidates);
+
   const allowed = new Set<string>();
   let scannedBytes = 0;
 
-  for (const fontPath of await discoverFontFiles(directories)) {
+  for (const candidate of candidates) {
     throwIfAborted(signal);
     try {
-      const stat = await fs.promises.stat(fontPath);
-      if (!isUsableFont(stat)) continue;
-      if (scannedBytes + stat.size > MAX_SYSTEM_FONT_SCAN_BYTES) break;
-      const bytes = await fs.promises.readFile(fontPath, { signal });
+      if (scannedBytes + candidate.byteLength > MAX_SYSTEM_FONT_SCAN_BYTES) break;
+      const bytes = await fs.promises.readFile(candidate.path, { signal });
       throwIfAborted(signal);
       if (bytes.byteLength > MAX_SYSTEM_FONT_BYTES) continue;
       if (scannedBytes + bytes.byteLength > MAX_SYSTEM_FONT_SCAN_BYTES) break;
       scannedBytes += bytes.byteLength;
-      if (await registerFont(fontPath, bytes) >= 0) allowed.add(fontPath);
+      const accepted = await registerFont(
+        candidate.path,
+        bytes,
+        resident.has(candidate.path),
+      );
+      if (accepted >= 0) allowed.add(candidate.path);
       throwIfAborted(signal);
     } catch {
       throwIfAborted(signal);

@@ -1,3 +1,5 @@
+import { requestDeadlineMs } from "./compile-deadline";
+
 const PROTOCOL_VERSION = 5;
 const DEFAULT_TIMEOUT_MS = 15_000;
 const DEFAULT_INITIALIZATION_TIMEOUT_MS = 120_000;
@@ -554,6 +556,7 @@ export class TypstianCompilerClient {
   private queuedCount = 0;
   private latestCompileRevision = -1;
   private latestDocumentRevision: number | undefined;
+  private sessionCompileCount = 0;
   private closed = false;
 
   constructor(options: TypstianCompilerClientOptions) {
@@ -784,7 +787,8 @@ export class TypstianCompilerClient {
         pending.timeout = window.setTimeout(() => {
           if (generation !== this.generation || pending.settled) return;
           this.failSession(new CompilerClientError("timeout", "Typst engine request timed out."));
-        }, this.timeoutMs);
+        }, requestDeadlineMs(kind, this.timeoutMs, this.sessionCompileCount));
+        if (kind === "compile") this.sessionCompileCount += 1;
         return this.callEngine(engine, kind, payload);
       });
       this.operationTail = execution.then(
@@ -957,6 +961,9 @@ export class TypstianCompilerClient {
   private failSession(error: CompilerClientError): void {
     this.generation += 1;
     this.queuedCount = 0;
+    // The next request starts a cold session: fresh worker, no registered fonts,
+    // no retained document. It gets the cold-start budget again.
+    this.sessionCompileCount = 0;
     this.operationTail = Promise.resolve();
     this.latestDocumentRevision = undefined;
 

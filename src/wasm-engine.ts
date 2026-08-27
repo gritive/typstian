@@ -20,6 +20,7 @@ import {
   typstPackageDirectories,
   type LocalPackages,
 } from "./typst-packages";
+import { MAX_SELECTED_FONT_BYTES } from "./font-residency";
 import { rootedReadFile, rootedReadFileAsync } from "./wasm-vault-reader";
 import { compileRequestJson, hostClock } from "./compile-request";
 
@@ -32,7 +33,6 @@ let wasmModuleInitialization: Promise<WebAssembly.Module> | undefined;
 
 const decompressBrotli = promisify(brotliDecompress);
 const MAX_VAULT_INPUT_BYTES = 70 * 1024 * 1024;
-const MAX_SELECTED_FONT_BYTES = 128 * 1024 * 1024;
 const MAX_COMPILER_INPUT_PATHS = 10_000;
 
 function loadWasmBytes(wasmPath: string): Promise<Uint8Array> {
@@ -184,6 +184,8 @@ interface InputBudget {
 interface CompileContext {
   budget: InputBudget;
   overlay?: ReadonlyMap<string, Uint8Array>;
+  /** Set once the worker's own resident font bytes have been charged. */
+  residentFontsCharged?: boolean;
 }
 
 class WorkerWasmEngine implements WasmEngine {
@@ -288,11 +290,11 @@ class WorkerWasmEngine implements WasmEngine {
     await this.request("initialize", { module, maxOutputBytes });
     const fonts = await registerSystemFonts(
       systemFontDirectories(),
-      async (fontPath, bytes) => {
+      async (fontPath, bytes, resident) => {
         const buffer = transferableBuffer(bytes);
         return this.request<number>(
           "register-font",
-          { path: fontPath, bytes: buffer },
+          { path: fontPath, bytes: buffer, resident },
           [buffer],
         );
       },
@@ -363,6 +365,9 @@ class WorkerWasmEngine implements WasmEngine {
       return;
     }
     const batchId = message.batchId as number;
+    const residentFontBytes = Number.isSafeInteger(message.residentFontBytes)
+      ? Math.max(0, message.residentFontBytes as number)
+      : 0;
     const strings = (values: unknown[]): string[] =>
       values.filter((value): value is string => typeof value === "string");
     const vaultPaths = strings(message.vaultPaths);
@@ -379,6 +384,15 @@ class WorkerWasmEngine implements WasmEngine {
     ) {
       this.postInputError(batchId, "Typstian compiler requested too many inputs.");
       return;
+    }
+    // Font faces the worker kept from an earlier compile are never re-shipped
+    // through `providePath`, so they would otherwise spend none of this
+    // compile's selected-font budget while still being alive for it. Charging
+    // them once keeps the worker's residency and the bytes shipped here under
+    // one 128 MiB ceiling rather than two.
+    if (context.residentFontsCharged !== true) {
+      context.residentFontsCharged = true;
+      context.budget.fontBytes = Math.max(0, context.budget.fontBytes - residentFontBytes);
     }
 
     try {

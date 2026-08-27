@@ -1,6 +1,10 @@
 import init, { TypstianWasmSession } from "../helper/wasm/pkg/typstian_wasm.js";
 
 import { compileRequestJson, hostClock } from "./compile-request";
+import {
+  MAX_RESIDENT_FONT_BYTES,
+  retainUsedFonts,
+} from "./font-residency";
 
 type WorkerMethod =
   | "initialize"
@@ -49,6 +53,20 @@ const scope = self as unknown as WorkerScope;
 const MAX_INPUT_PATHS = 10_000;
 const MAX_PDF_BYTES = 50 * 1024 * 1024;
 const sleep = new Map<number, (message: InputResponse) => void>();
+// Bytes the host asked this worker to keep after registration, so the first
+// compile of a session can answer the compiler's font lookups from memory
+// instead of laying the document out once with no loadable face. The host
+// already bounds the set through `planFontResidency`; the cap is re-enforced
+// here because the worker owns the memory. `settleResidency` then narrows the
+// set to the faces a compile actually read, so the cold-start ceiling is a
+// transient, not a per-preview tax.
+const residentFonts = new Map<string, Uint8Array>();
+let residentFontBytes = 0;
+// False until the first compile of this session settles. While it is false the
+// residency is an unproven bet governed by `MAX_RESIDENT_FONT_BYTES` alone;
+// once true the surviving bytes are proven selections, and the host charges
+// them against the same per-compile budget as the bytes it ships itself.
+let residencyProven = false;
 let previousPaths = new Set<string>();
 let previousPackagePaths = new Set<string>();
 let previousFontPaths = new Set<string>();
@@ -151,9 +169,19 @@ async function dispatch(
   if (activeSession === undefined) throw new Error("Typstian WASM worker is not initialized.");
 
   if (method === "register-font") {
-    const font = payload as { path: string; bytes: ArrayBuffer };
+    const font = payload as { path: string; bytes: ArrayBuffer; resident?: boolean };
     const bytes = new Uint8Array(font.bytes);
-    return { value: activeSession.register_font(font.path, bytes) };
+    const faces = activeSession.register_font(font.path, bytes);
+    if (
+      font.resident === true
+      && !residentFonts.has(font.path)
+      && residentFontBytes + bytes.byteLength <= MAX_RESIDENT_FONT_BYTES
+    ) {
+      // The buffer was transferred to this worker, so retaining it costs no copy.
+      residentFonts.set(font.path, bytes);
+      residentFontBytes += bytes.byteLength;
+    }
+    return { value: faces };
   }
   if (method === "environment") {
     return { value: boundedOutput(activeSession.environment()) };
@@ -202,6 +230,30 @@ function decodeCompileResult(value: unknown): WorkerDispatchResult {
   return { value: response, transfer: [pdfBuffer] };
 }
 
+/**
+ * Cashes in the cold-start residency once a compile has settled.
+ *
+ * `usedFontPaths` is every path the compiler asked `readFont` for during this
+ * compile, seeded hits included, so the faces that earned their memory are
+ * exactly the ones that stay. Running after the compile rather than before is
+ * the point: the first compile is the pass the residency exists for.
+ */
+function settleResidency(usedFontPaths: ReadonlySet<string>): void {
+  const kept = retainUsedFonts(
+    [...residentFonts].map(([path, bytes]) => ({
+      path,
+      byteLength: bytes.byteLength,
+    })),
+    usedFontPaths,
+  );
+  for (const path of [...residentFonts.keys()]) {
+    if (!kept.has(path)) residentFonts.delete(path);
+  }
+  residentFontBytes = 0;
+  for (const bytes of residentFonts.values()) residentFontBytes += bytes.byteLength;
+  residencyProven = true;
+}
+
 async function compile(
   activeSession: TypstianWasmSession,
   request: { revision: number; entryPath: string },
@@ -230,15 +282,24 @@ async function compile(
   const readPackage = reader(currentPackagePaths, packageCache, missingPackages);
   const readFont = reader(currentFontPaths, fontCache, missingFonts);
 
+  // Seed the retained faces before the first pass runs: a font lookup that
+  // misses costs a whole document layout that Typst then has to redo.
+  for (const [fontPath, bytes] of residentFonts) fontCache.set(fontPath, bytes);
+
+  // A retained face is already in the cache, so re-warming it would make the
+  // host read the same file from disk a second time.
+  const staleFontPaths = Array.from(previousFontPaths)
+    .filter((fontPath) => !fontCache.has(fontPath));
+
   if (
     previousPaths.size > 0
     || previousPackagePaths.size > 0
-    || previousFontPaths.size > 0
+    || staleFontPaths.length > 0
   ) {
     await requestInputs(
       Array.from(previousPaths),
       Array.from(previousPackagePaths),
-      Array.from(previousFontPaths),
+      staleFontPaths,
       caches,
     );
   }
@@ -248,40 +309,46 @@ async function compile(
   // shift mid-compile.
   const clock = hostClock();
 
-  while (true) {
-    missing.clear();
-    missingPackages.clear();
-    missingFonts.clear();
-    const result: unknown = activeSession.compile(
-      compileRequestJson(request, clock),
-      readFile,
-      readPackage,
-      readFont,
-    );
-    if (missing.size === 0 && missingPackages.size === 0 && missingFonts.size === 0) {
-      previousPaths = currentPaths;
-      previousPackagePaths = currentPackagePaths;
-      previousFontPaths = currentFontPaths;
-      return decodeCompileResult(result);
+  try {
+    while (true) {
+      missing.clear();
+      missingPackages.clear();
+      missingFonts.clear();
+      const result: unknown = activeSession.compile(
+        compileRequestJson(request, clock),
+        readFile,
+        readPackage,
+        readFont,
+      );
+      if (missing.size === 0 && missingPackages.size === 0 && missingFonts.size === 0) {
+        previousPaths = currentPaths;
+        previousPackagePaths = currentPackagePaths;
+        previousFontPaths = currentFontPaths;
+        return decodeCompileResult(result);
+      }
+      if (
+        currentPaths.size + currentPackagePaths.size + currentFontPaths.size
+          > MAX_INPUT_PATHS
+      ) {
+        throw new Error("Typstian compiler requested too many inputs.");
+      }
+      await requestInputs(
+        Array.from(missing),
+        Array.from(missingPackages),
+        Array.from(missingFonts),
+        caches,
+      );
+      const unresolved = Array.from(missing).some((path) => !fileCache.has(path))
+        || Array.from(missingPackages).some((path) => !packageCache.has(path))
+        || Array.from(missingFonts).some((path) => !fontCache.has(path));
+      if (unresolved) {
+        throw new Error("Typstian compiler input provider made no progress.");
+      }
     }
-    if (
-      currentPaths.size + currentPackagePaths.size + currentFontPaths.size
-        > MAX_INPUT_PATHS
-    ) {
-      throw new Error("Typstian compiler requested too many inputs.");
-    }
-    await requestInputs(
-      Array.from(missing),
-      Array.from(missingPackages),
-      Array.from(missingFonts),
-      caches,
-    );
-    const unresolved = Array.from(missing).some((path) => !fileCache.has(path))
-      || Array.from(missingPackages).some((path) => !packageCache.has(path))
-      || Array.from(missingFonts).some((path) => !fontCache.has(path));
-    if (unresolved) {
-      throw new Error("Typstian compiler input provider made no progress.");
-    }
+  } finally {
+    // The buffers must not outlive the compile that proved them, and a failed
+    // compile must not leave the cold-start set resident either.
+    settleResidency(currentFontPaths);
   }
 }
 
@@ -314,6 +381,13 @@ function requestInputs(
     scope.postMessage({
       type: "need-inputs",
       batchId: currentBatch,
+      // Proven resident faces never travel through the host's input path, so
+      // the host cannot see them in its per-compile font budget unless they are
+      // declared here. Unproven cold-start bytes are not declared: they are
+      // governed by `MAX_RESIDENT_FONT_BYTES` and are gone once this compile
+      // settles, and charging them would starve the very compile that has to
+      // fetch whatever the bet missed.
+      residentFontBytes: residencyProven ? residentFontBytes : 0,
       vaultPaths,
       packagePaths,
       fontPaths,
