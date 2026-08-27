@@ -134,7 +134,7 @@ and embeds the result in `main.js`; Community releases contain only `main.js`,
   reading them does not reopen the user-typed-path decision below. Configuration
   files include each other, so the reader follows `<include>` and terminates on
   two invariants together: one visited set per scan, so no file is read twice,
-  and `MAX_FONTCONFIG_INCLUDE_DEPTH`. Bounds: `MAX_SYSTEM_FONT_FILES`,
+  and `MAX_FONTCONFIG_INCLUDE_DEPTH`. Bounds: `MAX_SYSTEM_FONT_DIRECTORIES`, `MAX_SYSTEM_FONT_FILES`,
   `MAX_SYSTEM_FONT_SCAN_BYTES`, `MAX_SYSTEM_FONT_BYTES`, and, because
   discovery runs synchronously on the init thread,
   `MAX_FONTCONFIG_FILE_BYTES`, `MAX_FONTCONFIG_FRAGMENTS`, and
