@@ -957,6 +957,25 @@ describe("PdfPreviewRenderer", () => {
     popout.close();
   });
 
+  it("builds replacement pages with the popout document", async () => {
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext")
+      .mockReturnValue({} as CanvasRenderingContext2D);
+    vi.stubGlobal("createFragment", () => {
+      throw new Error("main-window document fragment was used");
+    });
+    const popout = new Window();
+    const root = popout.document.createElement("section") as unknown as HTMLElement;
+    const { engine } = engineFor([documentHandle([pageHandle(1)])]);
+    const renderer = new PdfPreviewRenderer(root, { engine });
+
+    await renderer.render(new Uint8Array([1]));
+
+    const pages = root.querySelector(".typst-pdf-pages");
+    expect(pages?.ownerDocument.defaultView).toBe(popout);
+    await renderer.dispose();
+    popout.close();
+  });
+
   it("discards a loading generation superseded by newer PDF bytes", async () => {
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({} as CanvasRenderingContext2D);
     const first = deferred<PdfDocumentHandle>();

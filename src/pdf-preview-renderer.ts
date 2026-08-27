@@ -363,7 +363,8 @@ private pageObserver: IntersectionObserver | null = null;
 
     // Held in a fragment so the previous PDF stays visible until the priority
     // page has rendered and the whole container can be swapped in at once.
-    const container = createFragment().createDiv({ cls: "typst-pdf-pages" });
+    const fragment = this.root.doc.createDocumentFragment();
+    const container = fragment.createDiv({ cls: "typst-pdf-pages" });
 
     const pageElements = new Map<number, HTMLElement>();
     for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
