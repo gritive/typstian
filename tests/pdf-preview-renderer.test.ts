@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 
+import { Window } from "happy-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -927,6 +928,33 @@ describe("PdfPreviewRenderer", () => {
     await renderer.dispose();
 
     expect(disconnect).toHaveBeenCalledOnce();
+  });
+
+  it("uses the popout window resize observer", async () => {
+    const popout = new Window();
+    const disconnect = vi.fn();
+    Object.defineProperty(popout, "ResizeObserver", {
+      configurable: true,
+      value: class PopoutResizeObserver {
+        observe = vi.fn();
+        unobserve = vi.fn();
+        disconnect = disconnect;
+      },
+    });
+    vi.stubGlobal("ResizeObserver", class MainWindowResizeObserver {
+      constructor() {
+        throw new Error("main-window ResizeObserver was used");
+      }
+    });
+    const root = popout.document.createElement("section") as unknown as HTMLElement;
+    const { engine } = engineFor([documentHandle([pageHandle(1)])]);
+
+    const renderer = new PdfPreviewRenderer(root, { engine });
+    await renderer.dispose();
+
+    expect(root.win).toBe(popout);
+    expect(disconnect).toHaveBeenCalledOnce();
+    popout.close();
   });
 
   it("discards a loading generation superseded by newer PDF bytes", async () => {

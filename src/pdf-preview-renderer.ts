@@ -173,9 +173,10 @@ private pageObserver: IntersectionObserver | null = null;
     this.observedWidth = this.root.offsetWidth
       || this.root.getBoundingClientRect().width
       || this.root.clientWidth;
-    this.resizeObserver = typeof ResizeObserver === "undefined"
+    const ResizeObserverCtor = root.win.ResizeObserver;
+    this.resizeObserver = typeof ResizeObserverCtor === "undefined"
       ? null
-      : new ResizeObserver((entries) => {
+      : new ResizeObserverCtor((entries) => {
         const borderBoxWidth = entries[0]?.borderBoxSize?.[0]?.inlineSize;
         const width = borderBoxWidth ?? (
           this.root.offsetWidth
