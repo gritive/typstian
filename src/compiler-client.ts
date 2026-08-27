@@ -1,4 +1,5 @@
 import { requestDeadlineMs } from "./compile-deadline";
+import { COMPILER_CLIENT_ERROR } from "./messages";
 
 const PROTOCOL_VERSION = 5;
 const DEFAULT_TIMEOUT_MS = 15_000;
@@ -215,34 +216,34 @@ function malformed(message: string): CompilerClientError {
 }
 
 function requireRecord(value: unknown, label: string): Record<string, unknown> {
-  if (!isRecord(value)) throw malformed(`Compiler returned an invalid ${label}.`);
+  if (!isRecord(value)) throw malformed(COMPILER_CLIENT_ERROR.invalidCompilerValue(label));
   return value;
 }
 
 function requireString(value: unknown, label: string): string {
   if (typeof value !== "string" || value.length === 0) {
-    throw malformed(`Compiler returned an invalid ${label}.`);
+    throw malformed(COMPILER_CLIENT_ERROR.invalidCompilerValue(label));
   }
   return value;
 }
 
 function requireInteger(value: unknown, label: string, minimum = 0): number {
   if (!Number.isSafeInteger(value) || (value as number) < minimum) {
-    throw malformed(`Compiler returned an invalid ${label}.`);
+    throw malformed(COMPILER_CLIENT_ERROR.invalidCompilerValue(label));
   }
   return value as number;
 }
 
 function requirePositiveNumber(value: unknown, label: string): number {
   if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
-    throw malformed(`Compiler returned an invalid ${label}.`);
+    throw malformed(COMPILER_CLIENT_ERROR.invalidCompilerValue(label));
   }
   return value;
 }
 
 function requireNonNegativeNumber(value: unknown, label: string): number {
   if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
-    throw malformed(`Compiler returned an invalid ${label}.`);
+    throw malformed(COMPILER_CLIENT_ERROR.invalidCompilerValue(label));
   }
   return value;
 }
@@ -256,30 +257,30 @@ function isSafeVaultPath(path: string): boolean {
 
 function requireVaultPath(value: unknown, label: string): string {
   const path = requireString(value, label);
-  if (!isSafeVaultPath(path)) throw malformed(`Compiler returned an unsafe ${label}.`);
+  if (!isSafeVaultPath(path)) throw malformed(COMPILER_CLIENT_ERROR.unsafeCompilerPath(label));
   return path;
 }
 
 function validateVaultPath(value: unknown, label: string): asserts value is string {
   if (typeof value !== "string" || !isSafeVaultPath(value)) {
-    throw new CompilerClientError("invalid-input", `${label} must be a vault-relative path.`);
+    throw new CompilerClientError("invalid-input", COMPILER_CLIENT_ERROR.vaultRelativePath(label));
   }
 }
 
 function validateRevision(value: unknown): asserts value is number {
   if (!Number.isSafeInteger(value) || (value as number) < 0) {
-    throw new CompilerClientError("invalid-input", "Revision must be a non-negative integer.");
+    throw new CompilerClientError("invalid-input", COMPILER_CLIENT_ERROR.revisionNonNegative);
   }
 }
 
 function parseDiagnostics(value: unknown): CompilerDiagnostic[] {
   if (!Array.isArray(value) || value.length > MAX_DIAGNOSTICS) {
-    throw malformed("Compiler returned invalid diagnostics.");
+    throw malformed(COMPILER_CLIENT_ERROR.invalidDiagnostics);
   }
   return value.map((item) => {
     const diagnostic = requireRecord(item, "diagnostic");
     if (diagnostic.severity !== "error" && diagnostic.severity !== "warning") {
-      throw malformed("Compiler returned an invalid diagnostic severity.");
+      throw malformed(COMPILER_CLIENT_ERROR.invalidDiagnosticSeverity);
     }
     const result: CompilerDiagnostic = {
       severity: diagnostic.severity,
@@ -298,7 +299,7 @@ function parseDiagnostics(value: unknown): CompilerDiagnostic[] {
 
 function parseDependencies(value: unknown): string[] {
   if (!Array.isArray(value) || value.length > MAX_DEPENDENCIES) {
-    throw malformed("Compiler returned invalid dependencies.");
+    throw malformed(COMPILER_CLIENT_ERROR.invalidDependencies);
   }
   return value.map((path) => requireVaultPath(path, "dependency path"));
 }
@@ -309,12 +310,12 @@ function parseError(
   expectedRevision?: number,
 ): Record<string, unknown> {
   if (response.type !== "error" || response.requestType !== expectedKind) {
-    throw malformed(`Compiler returned the wrong response for ${expectedKind}.`);
+    throw malformed(COMPILER_CLIENT_ERROR.wrongResponse(expectedKind));
   }
   if (expectedRevision === undefined) {
-    if (response.revision !== null) throw malformed("Compiler returned an invalid error revision.");
+    if (response.revision !== null) throw malformed(COMPILER_CLIENT_ERROR.invalidErrorRevision);
   } else if (response.revision !== expectedRevision) {
-    throw malformed("Compiler returned the wrong error revision.");
+    throw malformed(COMPILER_CLIENT_ERROR.wrongErrorRevision);
   }
   requireString(response.code, "error code");
   requireString(response.message, "error message");
@@ -333,7 +334,7 @@ function parseEnvironment(value: unknown): CompilerEnvironment {
   const response = requireRecord(value, "environment response");
   if (response.type === "error") throw transportError(parseError(response, "environment"));
   if (response.type !== "environment" || response.protocolVersion !== PROTOCOL_VERSION) {
-    throw malformed("Typstian compiler protocol version does not match the plugin.");
+    throw malformed(COMPILER_CLIENT_ERROR.protocolVersionMismatch);
   }
   return {
     protocolVersion: PROTOCOL_VERSION,
@@ -374,12 +375,12 @@ function parseCompile(
   const response = requireRecord(value, "compile response");
   if (response.type === "error") return parseCompileError(response, revision);
   if (response.type !== "compiled" || response.revision !== revision) {
-    throw malformed("Compiler returned the wrong compile revision.");
+    throw malformed(COMPILER_CLIENT_ERROR.wrongCompileRevision);
   }
 
   const declaredBytes = requireInteger(response.pdfBytes, "PDF byte count", 1);
   if (declaredBytes > maxPdfBytes) {
-    throw new CompilerClientError("output-limit", "Typstian compiler PDF exceeded its size limit.");
+    throw new CompilerClientError("output-limit", COMPILER_CLIENT_ERROR.pdfTooLarge);
   }
 
   let pdf: Uint8Array;
@@ -391,16 +392,16 @@ function parseCompile(
       encoded.length !== 4 * Math.ceil(declaredBytes / 3)
       || !BASE64.test(encoded)
     ) {
-      throw malformed("Compiler returned invalid base64 PDF data.");
+      throw malformed(COMPILER_CLIENT_ERROR.invalidBase64Pdf);
     }
     const decoded = Buffer.from(encoded, "base64");
     pdf = new Uint8Array(decoded.buffer, decoded.byteOffset, decoded.byteLength);
   }
   if (pdf.byteLength !== declaredBytes || !hasPdfMagic(pdf)) {
-    throw malformed("Compiler returned an invalid PDF artifact.");
+    throw malformed(COMPILER_CLIENT_ERROR.invalidPdfArtifact);
   }
   if (!Array.isArray(response.pages) || response.pages.length > MAX_PAGES) {
-    throw malformed("Compiler returned invalid PDF page metadata.");
+    throw malformed(COMPILER_CLIENT_ERROR.invalidPdfPageMetadata);
   }
   const pages = response.pages.map((item) => {
     const page = requireRecord(item, "PDF page metadata");
@@ -425,11 +426,11 @@ function parseJump(value: unknown, revision: number): CompilerJumpResult {
   if (response.type === "error") throw transportError(parseError(response, "jump", revision));
   if (response.type === "stale-revision") {
     requireInteger(response.expectedRevision, "expected revision");
-    throw new CompilerClientError("stale", "Preview revision is no longer active.");
+    throw new CompilerClientError("stale", COMPILER_CLIENT_ERROR.previewRevisionInactive);
   }
-  if (response.revision !== revision) throw malformed("Compiler returned the wrong jump revision.");
+  if (response.revision !== revision) throw malformed(COMPILER_CLIENT_ERROR.wrongJumpRevision);
   if (response.type === "no-source") return { revision, location: null };
-  if (response.type !== "source") throw malformed("Compiler returned the wrong jump response.");
+  if (response.type !== "source") throw malformed(COMPILER_CLIENT_ERROR.wrongJumpResponse);
   return {
     revision,
     location: {
@@ -444,22 +445,22 @@ function parseForward(value: unknown, revision: number): CompilerForwardResult {
   if (response.type === "error") throw transportError(parseError(response, "forward", revision));
   if (response.type === "stale-revision") {
     requireInteger(response.expectedRevision, "expected revision");
-    throw new CompilerClientError("stale", "Preview revision is no longer active.");
+    throw new CompilerClientError("stale", COMPILER_CLIENT_ERROR.previewRevisionInactive);
   }
-  if (response.revision !== revision) throw malformed("Compiler returned the wrong revision for a preview position.");
+  if (response.revision !== revision) throw malformed(COMPILER_CLIENT_ERROR.wrongPreviewPositionRevision);
   if (response.type === "no-position") return { revision, positions: [] };
   if (response.type !== "positions" || !Array.isArray(response.positions)) {
-    throw malformed("Compiler returned the wrong reply for a preview position.");
+    throw malformed(COMPILER_CLIENT_ERROR.wrongPreviewPositionReply);
   }
   if (response.positions.length > MAX_PAGES) {
-    throw malformed("Compiler returned too many preview positions.");
+    throw malformed(COMPILER_CLIENT_ERROR.tooManyPreviewPositions);
   }
   return {
     revision,
     positions: response.positions.map((value) => {
       const position = requireRecord(value, "forward position");
       const page = requireInteger(position.page, "forward page", 1);
-      if (page > MAX_PAGES) throw malformed("Compiler returned an invalid forward page.");
+      if (page > MAX_PAGES) throw malformed(COMPILER_CLIENT_ERROR.invalidForwardPage);
       return {
         page,
         xPt: requireNonNegativeNumber(position.xPt, "forward x coordinate"),
@@ -478,22 +479,22 @@ function parseComplete(
   if (response.type === "error") throw transportError(parseError(response, "complete", revision));
   if (response.type === "stale-revision") {
     requireInteger(response.expectedRevision, "expected revision");
-    throw new CompilerClientError("stale", "Preview revision is no longer active.");
+    throw new CompilerClientError("stale", COMPILER_CLIENT_ERROR.previewRevisionInactive);
   }
   if (response.revision !== revision) {
-    throw malformed("Compiler returned the wrong completion revision.");
+    throw malformed(COMPILER_CLIENT_ERROR.wrongCompletionRevision);
   }
   // Nothing to offer still answers with the cursor, so the caller never has to
   // special-case an absent replacement range.
   if (response.type === "no-completions") return { revision, byteOffset, completions: [] };
   if (response.type !== "completions" || !Array.isArray(response.completions)) {
-    throw malformed("Compiler returned the wrong completion response.");
+    throw malformed(COMPILER_CLIENT_ERROR.wrongCompletionResponse);
   }
   if (response.completions.length > MAX_COMPLETIONS) {
-    throw malformed("Compiler returned too many completions.");
+    throw malformed(COMPILER_CLIENT_ERROR.tooManyCompletions);
   }
   const start = requireInteger(response.byteOffset, "completion byte offset");
-  if (start > byteOffset) throw malformed("Compiler returned a completion past the cursor.");
+  if (start > byteOffset) throw malformed(COMPILER_CLIENT_ERROR.completionPastCursor);
   return {
     revision,
     byteOffset: start,
@@ -516,7 +517,7 @@ function parseComplete(
 
 function requirePositiveOption(value: number, label: string): number {
   if (!Number.isSafeInteger(value) || value <= 0) {
-    throw new CompilerClientError("invalid-input", `${label} must be a positive integer.`);
+    throw new CompilerClientError("invalid-input", COMPILER_CLIENT_ERROR.positiveInteger(label));
   }
   return value;
 }
@@ -560,7 +561,7 @@ export class TypstianCompilerClient {
 
   constructor(options: TypstianCompilerClientOptions) {
     if (options.rootPath.length === 0) {
-      throw new CompilerClientError("invalid-input", "Vault root path is required.");
+      throw new CompilerClientError("invalid-input", COMPILER_CLIENT_ERROR.vaultRootRequired);
     }
     this.rootPath = options.rootPath;
     this.wasmPath = options.wasmPath;
@@ -594,17 +595,17 @@ export class TypstianCompilerClient {
       validateRevision(request.revision);
       validateVaultPath(request.entryPath, "Entry path");
     } catch (error) {
-      return Promise.reject(asClientError(error, "invalid-input", "Compile request is invalid."));
+      return Promise.reject(asClientError(error, "invalid-input", COMPILER_CLIENT_ERROR.compileRequestInvalid));
     }
     if (request.signal?.aborted === true) {
-      return Promise.reject(new CompilerClientError("aborted", "Typst engine request was cancelled."));
+      return Promise.reject(new CompilerClientError("aborted", COMPILER_CLIENT_ERROR.requestCancelled));
     }
     if (request.revision <= this.latestCompileRevision) {
-      return Promise.reject(new CompilerClientError("stale", "Compile revision has been superseded."));
+      return Promise.reject(new CompilerClientError("stale", COMPILER_CLIENT_ERROR.compileSuperseded));
     }
 
     if (this.queuedCount > 0 || this.pending.size > 0) {
-      this.failSession(new CompilerClientError("stale", "Compile revision has been superseded."));
+      this.failSession(new CompilerClientError("stale", COMPILER_CLIENT_ERROR.compileSuperseded));
     }
     this.latestCompileRevision = request.revision;
     this.latestDocumentRevision = undefined;
@@ -619,7 +620,7 @@ export class TypstianCompilerClient {
       request.signal,
     ).then((result) => {
       if (request.revision !== this.latestCompileRevision) {
-        throw new CompilerClientError("stale", "Compile revision has been superseded.");
+        throw new CompilerClientError("stale", COMPILER_CLIENT_ERROR.compileSuperseded);
       }
       this.latestDocumentRevision = result.ok ? result.revision : undefined;
       return result;
@@ -637,13 +638,13 @@ export class TypstianCompilerClient {
         !Number.isFinite(request.yPt) ||
         request.yPt < 0
       ) {
-        throw new CompilerClientError("invalid-input", "Jump coordinates are invalid.");
+        throw new CompilerClientError("invalid-input", COMPILER_CLIENT_ERROR.jumpCoordinatesInvalid);
       }
     } catch (error) {
-      return Promise.reject(asClientError(error, "invalid-input", "Jump request is invalid."));
+      return Promise.reject(asClientError(error, "invalid-input", COMPILER_CLIENT_ERROR.jumpRequestInvalid));
     }
     if (request.revision !== this.latestDocumentRevision) {
-      return Promise.reject(new CompilerClientError("stale", "Preview revision is no longer active."));
+      return Promise.reject(new CompilerClientError("stale", COMPILER_CLIENT_ERROR.previewRevisionInactive));
     }
     return this.enqueue(
       "jump",
@@ -663,13 +664,13 @@ export class TypstianCompilerClient {
       validateRevision(request.revision);
       validateVaultPath(request.source, "Forward source");
       if (!Number.isSafeInteger(request.byteOffset) || request.byteOffset < 0) {
-        throw new CompilerClientError("invalid-input", "Forward byte offset is invalid.");
+        throw new CompilerClientError("invalid-input", COMPILER_CLIENT_ERROR.forwardByteOffsetInvalid);
       }
     } catch (error) {
-      return Promise.reject(asClientError(error, "invalid-input", "Forward request is invalid."));
+      return Promise.reject(asClientError(error, "invalid-input", COMPILER_CLIENT_ERROR.forwardRequestInvalid));
     }
     if (request.revision !== this.latestDocumentRevision) {
-      return Promise.reject(new CompilerClientError("stale", "Preview revision is no longer active."));
+      return Promise.reject(new CompilerClientError("stale", COMPILER_CLIENT_ERROR.previewRevisionInactive));
     }
     return this.enqueue(
       "forward",
@@ -693,19 +694,19 @@ export class TypstianCompilerClient {
       validateRevision(request.revision);
       validateVaultPath(request.source, "Completion source");
       if (!Number.isSafeInteger(request.byteOffset) || request.byteOffset < 0) {
-        throw new CompilerClientError("invalid-input", "Completion byte offset is invalid.");
+        throw new CompilerClientError("invalid-input", COMPILER_CLIENT_ERROR.completionByteOffsetInvalid);
       }
       if (
         typeof request.sourceText !== "string"
         || Buffer.byteLength(request.sourceText) > this.maxCompletionBytes
       ) {
-        throw new CompilerClientError("invalid-input", "Completion source text is too large.");
+        throw new CompilerClientError("invalid-input", COMPILER_CLIENT_ERROR.completionSourceTooLarge);
       }
     } catch (error) {
-      return Promise.reject(asClientError(error, "invalid-input", "Completion request is invalid."));
+      return Promise.reject(asClientError(error, "invalid-input", COMPILER_CLIENT_ERROR.completionRequestInvalid));
     }
     if (request.revision !== this.latestDocumentRevision) {
-      return Promise.reject(new CompilerClientError("stale", "Preview revision is no longer active."));
+      return Promise.reject(new CompilerClientError("stale", COMPILER_CLIENT_ERROR.previewRevisionInactive));
     }
     return this.enqueue(
       "complete",
@@ -724,7 +725,7 @@ export class TypstianCompilerClient {
   close(): void {
     if (this.closed) return;
     this.closed = true;
-    this.failSession(new CompilerClientError("closed", "Typst engine client is closed."));
+    this.failSession(new CompilerClientError("closed", COMPILER_CLIENT_ERROR.clientClosed));
   }
 
   dispose(): void {
@@ -738,16 +739,16 @@ export class TypstianCompilerClient {
     signal?: AbortSignal,
   ): Promise<T> {
     if (this.closed) {
-      return Promise.reject(new CompilerClientError("closed", "Typst engine client is closed."));
+      return Promise.reject(new CompilerClientError("closed", COMPILER_CLIENT_ERROR.clientClosed));
     }
     if (signal?.aborted === true) {
-      return Promise.reject(new CompilerClientError("aborted", "Typst engine request was cancelled."));
+      return Promise.reject(new CompilerClientError("aborted", COMPILER_CLIENT_ERROR.requestCancelled));
     }
 
     const encodedRequest = JSON.stringify(payload);
     const requestLimit = kind === "complete" ? this.maxCompletionBytes : this.maxRequestBytes;
     if (Buffer.byteLength(encodedRequest) > requestLimit) {
-      return Promise.reject(new CompilerClientError("invalid-input", "Typst engine request is too large."));
+      return Promise.reject(new CompilerClientError("invalid-input", COMPILER_CLIENT_ERROR.requestTooLarge));
     }
 
     const generation = this.generation;
@@ -764,7 +765,7 @@ export class TypstianCompilerClient {
       if (signal !== undefined) {
         pending.abort = () => {
           if (pending.settled) return;
-          const error = new CompilerClientError("aborted", "Typst engine request was cancelled.");
+          const error = new CompilerClientError("aborted", COMPILER_CLIENT_ERROR.requestCancelled);
           if (kind === "compile") {
             this.failSession(error);
           } else {
@@ -777,18 +778,18 @@ export class TypstianCompilerClient {
 
       const execution = this.operationTail.then(async () => {
         if (generation !== this.generation) {
-          throw new CompilerClientError("stale", "Typst engine session has been superseded.");
+          throw new CompilerClientError("stale", COMPILER_CLIENT_ERROR.sessionSuperseded);
         }
         const engine = await this.getEngine(generation);
         if (generation !== this.generation) {
-          throw new CompilerClientError("stale", "Typst engine session has been superseded.");
+          throw new CompilerClientError("stale", COMPILER_CLIENT_ERROR.sessionSuperseded);
         }
         if (pending.settled) {
-          throw new CompilerClientError("aborted", "Typst engine request was cancelled.");
+          throw new CompilerClientError("aborted", COMPILER_CLIENT_ERROR.requestCancelled);
         }
         pending.timeout = window.setTimeout(() => {
           if (generation !== this.generation || pending.settled) return;
-          this.failSession(new CompilerClientError("timeout", "Typst engine request timed out."));
+          this.failSession(new CompilerClientError("timeout", COMPILER_CLIENT_ERROR.requestTimedOut));
         }, requestDeadlineMs(kind, this.timeoutMs, this.sessionCompileCount));
         if (kind === "compile") this.sessionCompileCount += 1;
         return this.callEngine(engine, kind, payload);
@@ -808,17 +809,17 @@ export class TypstianCompilerClient {
               if (Buffer.byteLength(responseValue) > this.maxOutputBytes) {
                 throw new CompilerClientError(
                   "output-limit",
-                  "Typst engine output exceeded its limit.",
+                  COMPILER_CLIENT_ERROR.outputTooLarge,
                 );
               }
               try {
                 response = JSON.parse(responseValue) as unknown;
               } catch {
-                throw malformed("Typst engine returned malformed JSON.");
+                throw malformed(COMPILER_CLIENT_ERROR.malformedJson);
               }
             } else {
               if (kind !== "compile") {
-                throw malformed("Typst engine returned a non-text response.");
+                throw malformed(COMPILER_CLIENT_ERROR.nonTextResponse);
               }
               response = responseValue;
             }
@@ -828,7 +829,7 @@ export class TypstianCompilerClient {
             const clientError =
               error instanceof CompilerClientError
                 ? error
-                : malformed("Typst engine returned a malformed response.");
+                : malformed(COMPILER_CLIENT_ERROR.malformedResponse);
             // A completion is an optional read of retained state: refusing the
             // one bad reply is enough. Compile, jump, and forward still fail the
             // whole session, because a document they cannot trust is one the
@@ -847,7 +848,7 @@ export class TypstianCompilerClient {
         (error) => {
           if (generation === this.generation) this.queuedCount -= 1;
           if (generation !== this.generation || pending.settled) return;
-          this.failSession(asClientError(error, "crash", "Typst WASM engine failed."));
+          this.failSession(asClientError(error, "crash", COMPILER_CLIENT_ERROR.wasmFailed));
         },
       );
     });
@@ -869,8 +870,8 @@ export class TypstianCompilerClient {
           throw new CompilerClientError(
             this.closed ? "closed" : "stale",
             this.closed
-              ? "Typst engine client is closed."
-              : "Typst engine session has been superseded.",
+              ? COMPILER_CLIENT_ERROR.clientClosed
+              : COMPILER_CLIENT_ERROR.sessionSuperseded,
           );
         }
         this.loadedEngine = engine;
@@ -879,15 +880,15 @@ export class TypstianCompilerClient {
           throw new CompilerClientError(
             this.closed ? "closed" : "stale",
             this.closed
-              ? "Typst engine client is closed."
-              : "Typst engine session has been superseded.",
+              ? COMPILER_CLIENT_ERROR.clientClosed
+              : COMPILER_CLIENT_ERROR.sessionSuperseded,
           );
         }
         return engine;
       })
       .catch((error: unknown) => {
         if (this.enginePromise === promise) this.enginePromise = undefined;
-        throw asClientError(error, "unavailable", "Typst WASM engine could not be loaded.");
+        throw asClientError(error, "unavailable", COMPILER_CLIENT_ERROR.wasmCouldNotLoad);
       });
     this.enginePromise = promise;
     return promise;
@@ -898,7 +899,7 @@ export class TypstianCompilerClient {
       const timeout = window.setTimeout(() => {
         reject(new CompilerClientError(
           "timeout",
-          "Typst WASM engine initialization timed out.",
+          COMPILER_CLIENT_ERROR.initializationTimedOut,
         ));
       }, this.initializationTimeoutMs);
       void engine.ready().then(

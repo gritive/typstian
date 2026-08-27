@@ -88,13 +88,6 @@ function canonicalOrSelf(directory: string): string {
  * the user is still looking at the field, instead of leaving it to a notice on
  * some later action.
  */
-/**
- * What to tell the user about a root that will not resolve. The settings row
- * and the commands that refuse to run both say this, so the two cannot drift
- * into telling the same user different stories about one value.
- */
-export { COMPILATION_ROOT_PROBLEM } from "./messages";
-
 export function checkCompilationRoot(vaultRoot: string, rootPath: string): CompilationRootCheck {
   // The escape is decided lexically first, so `../notes` is named for leaving
   // the vault rather than for not existing yet — creating it would not help.

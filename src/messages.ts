@@ -54,6 +54,64 @@ export const MESSAGES = {
   },
 } as const;
 
+
+/**
+ * CompilerClientError messages are rendered directly by the preview and notices.
+ * Keep protocol-validation copy here too: those failures use the same visible path.
+ */
+export const COMPILER_CLIENT_ERROR = {
+  invalidCompilerValue: (label: string): string => `Compiler returned an invalid ${label}.`,
+  unsafeCompilerPath: (label: string): string => `Compiler returned an unsafe ${label}.`,
+  wrongResponse: (kind: string): string => `Compiler returned the wrong response for ${kind}.`,
+  vaultRelativePath: (label: string): string => `${label} must be a vault-relative path.`,
+  positiveInteger: (label: string): string => `${label} must be a positive integer.`,
+  revisionNonNegative: "Revision must be a non-negative integer.",
+  invalidDiagnostics: "Compiler returned invalid diagnostics.",
+  invalidDiagnosticSeverity: "Compiler returned an invalid diagnostic severity.",
+  invalidDependencies: "Compiler returned invalid dependencies.",
+  invalidErrorRevision: "Compiler returned an invalid error revision.",
+  wrongErrorRevision: "Compiler returned the wrong error revision.",
+  protocolVersionMismatch: "Typstian compiler protocol version does not match the plugin.",
+  wrongCompileRevision: "Compiler returned the wrong compile revision.",
+  pdfTooLarge: "Typstian compiler PDF exceeded its size limit.",
+  invalidBase64Pdf: "Compiler returned invalid base64 PDF data.",
+  invalidPdfArtifact: "Compiler returned an invalid PDF artifact.",
+  invalidPdfPageMetadata: "Compiler returned invalid PDF page metadata.",
+  previewRevisionInactive: "Preview revision is no longer active.",
+  wrongJumpRevision: "Compiler returned the wrong jump revision.",
+  wrongJumpResponse: "Compiler returned the wrong jump response.",
+  wrongPreviewPositionRevision: "Compiler returned the wrong revision for a preview position.",
+  wrongPreviewPositionReply: "Compiler returned the wrong reply for a preview position.",
+  tooManyPreviewPositions: "Compiler returned too many preview positions.",
+  invalidForwardPage: "Compiler returned an invalid forward page.",
+  wrongCompletionRevision: "Compiler returned the wrong completion revision.",
+  wrongCompletionResponse: "Compiler returned the wrong completion response.",
+  tooManyCompletions: "Compiler returned too many completions.",
+  completionPastCursor: "Compiler returned a completion past the cursor.",
+  vaultRootRequired: "Vault root path is required.",
+  compileRequestInvalid: "Compile request is invalid.",
+  requestCancelled: "Typst engine request was cancelled.",
+  compileSuperseded: "Compile revision has been superseded.",
+  jumpCoordinatesInvalid: "Jump coordinates are invalid.",
+  jumpRequestInvalid: "Jump request is invalid.",
+  forwardByteOffsetInvalid: "Forward byte offset is invalid.",
+  forwardRequestInvalid: "Forward request is invalid.",
+  completionByteOffsetInvalid: "Completion byte offset is invalid.",
+  completionSourceTooLarge: "Completion source text is too large.",
+  completionRequestInvalid: "Completion request is invalid.",
+  clientClosed: "Typst engine client is closed.",
+  requestTooLarge: "Typst engine request is too large.",
+  sessionSuperseded: "Typst engine session has been superseded.",
+  requestTimedOut: "Typst engine request timed out.",
+  outputTooLarge: "Typst engine output exceeded its limit.",
+  malformedJson: "Typst engine returned malformed JSON.",
+  nonTextResponse: "Typst engine returned a non-text response.",
+  malformedResponse: "Typst engine returned a malformed response.",
+  wasmFailed: "Typst WASM engine failed.",
+  wasmCouldNotLoad: "Typst WASM engine could not be loaded.",
+  initializationTimedOut: "Typst WASM engine initialization timed out.",
+} as const;
+
 export const COMPILATION_ROOT_PROBLEM: Record<CompilationRootProblem, string> = {
   "missing": "No folder at this path yet. Create it, or type a path that exists.",
   "not-a-folder": "This path is a file, not a folder. Type the path of a folder instead.",
@@ -69,19 +127,18 @@ export const previewTitle = (sourcePath: string | null): string => sourcePath ==
 export const failedCompileStatus = (errorCount: number): string =>
   `${MESSAGES.status.failed} (${errorCount} ${errorCount === 1 ? "error" : "errors"})`;
 
-export const diagnosticText = (
-  path: string,
-  line: number,
-  column: number,
-  message: string,
-): string => `${path}:${line}:${column} — ${message}`;
 
-export const diagnosticLabel = (
-  path: string,
-  line: number,
-  column: number,
-  message: string,
-): string => `Go to ${path}, line ${line}, column ${column}: ${message}`;
+export const diagnosticCopy = (
+  { path, line, column, message }: {
+    path: string;
+    line: number;
+    column: number;
+    message: string;
+  },
+): { text: string; label: string } => ({
+  text: `${path}:${line}:${column} — ${message}`,
+  label: `Go to ${path}, line ${line}, column ${column}: ${message}`,
+});
 
 export const pdfPageLabel = (page: number): string => `PDF page ${page}`;
 export const pdfTextLayerLabel = (page: number): string => `Selectable text for PDF page ${page}`;

@@ -1,5 +1,5 @@
 import type { CompilerDiagnostic } from "./compiler-client";
-import { diagnosticLabel, diagnosticText, MESSAGES } from "./messages";
+import { diagnosticCopy, MESSAGES } from "./messages";
 import { PdfPreviewRenderer, type PdfEngine, type PdfPreviewPoint } from "./pdf-preview-renderer";
 import { createPdfJsEngine } from "./pdfjs-adapter";
 
@@ -157,12 +157,10 @@ export class PreviewRenderer {
         cls: "typst-preview-diagnostic",
       });
       if (located) {
+        const copy = diagnosticCopy({ path, line, column, message: diagnostic.message });
         element.setAttribute("type", "button");
-        element.textContent = diagnosticText(path, line, column, diagnostic.message);
-        element.setAttribute(
-          "aria-label",
-          diagnosticLabel(path, line, column, diagnostic.message),
-        );
+        element.textContent = copy.text;
+        element.setAttribute("aria-label", copy.label);
         element.addEventListener("click", () => this.onDiagnostic?.(diagnostic));
       } else {
         element.textContent = diagnostic.message;

@@ -523,7 +523,10 @@ it("passes the pinned overlay snapshot to the engine compile request", async () 
     try {
       const { client, engines } = harness({ timeoutMs: 25 });
       const result = client.checkEnvironment();
-      const rejection = expect(result).rejects.toMatchObject({ code: "timeout" });
+      const rejection = expect(result).rejects.toMatchObject({
+        code: "timeout",
+        message: "Typst engine request timed out.",
+      });
       await vi.advanceTimersByTimeAsync(0);
       expect(engines[0]?.calls).toHaveLength(1);
 
