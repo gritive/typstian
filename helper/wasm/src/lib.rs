@@ -40,6 +40,7 @@ const MAX_VAULT_FILE_BYTES: usize = 50 * 1024 * 1024;
 const MAX_TOTAL_INPUT_BYTES: usize = 70 * 1024 * 1024;
 const MAX_PDF_BYTES: usize = 50 * 1024 * 1024;
 const MAX_PDF_PAGES: usize = 1_000;
+const MAX_PDF_PAGE_EDGE_POINTS: f64 = 14_400.0;
 const MAX_DEPENDENCIES: usize = 10_000;
 const MAX_FONT_FILE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_FONT_FACES: usize = 20_000;
@@ -699,6 +700,14 @@ impl Session {
         };
         if document.pages().len() > MAX_PDF_PAGES {
             return Err(format!("document exceeds {MAX_PDF_PAGES} page limit"));
+        }
+        if document.pages().iter().any(|page| {
+            page.frame.width().to_pt() > MAX_PDF_PAGE_EDGE_POINTS
+                || page.frame.height().to_pt() > MAX_PDF_PAGE_EDGE_POINTS
+        }) {
+            return Err(format!(
+                "document page exceeds {MAX_PDF_PAGE_EDGE_POINTS} point edge limit"
+            ));
         }
         let pdf = typst_pdf::pdf(&document, &PdfOptions::default())
             .map_err(|errors| format!("PDF export failed: {errors:?}"))?;

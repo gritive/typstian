@@ -591,3 +591,20 @@ fn rejects_documents_over_the_supported_page_count() {
         Ok(_) => panic!("document over the supported page count compiled"),
     }
 }
+
+#[test]
+fn rejects_documents_over_the_supported_page_size() {
+    let source = "#set page(width: 14401pt, height: 10pt, margin: 0pt)\nOversized";
+    let result = Session::new().compile(CompileRequest {
+        clock: CLOCK,
+        entry: "main.typ".into(),
+        revision: 1,
+        files: vec![file_input("main.typ", source.as_bytes())],
+        packages: Vec::new(),
+    });
+
+    match result {
+        Err(error) => assert_eq!(error, "document page exceeds 14400 point edge limit"),
+        Ok(_) => panic!("document over the supported page size compiled"),
+    }
+}
