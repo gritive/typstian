@@ -266,5 +266,6 @@ unsaved-buffer live preview. Read the relevant
 ADR before changing preview, search, or compiler integration.
 
 `docs/specs/` holds the requirements a change was accepted against, one file per
-change, written before the code: `preview-entry-points.md`. An ADR records why
+change, written before the code: `preview-entry-points.md`,
+`font-discovery-paths.md`. An ADR records why
 an architecture is the way it is; a spec records what a change had to do.
