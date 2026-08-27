@@ -529,8 +529,9 @@ private pageObserver: IntersectionObserver | null = null;
     this.root.replaceChildren(container);
     this.restoreScrollPosition(scrollPosition);
 
-    if (typeof IntersectionObserver !== "undefined") {
-      const observer = new IntersectionObserver((entries) => {
+    const IntersectionObserverCtor = this.root.win.IntersectionObserver;
+    if (typeof IntersectionObserverCtor !== "undefined") {
+      const observer = new IntersectionObserverCtor((entries) => {
         if (!this.isCurrent(generation) || this.pageObserver !== observer) return;
         for (const entry of entries) {
           const pageNumber = Number((entry.target as HTMLElement).dataset.page);

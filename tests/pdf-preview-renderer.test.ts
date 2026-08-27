@@ -976,6 +976,39 @@ describe("PdfPreviewRenderer", () => {
     popout.close();
   });
 
+  it("observes virtual pages with the popout window", async () => {
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext")
+      .mockReturnValue({} as CanvasRenderingContext2D);
+    const observe = vi.fn();
+    const popout = new Window();
+    Object.defineProperty(popout, "IntersectionObserver", {
+      configurable: true,
+      value: class PopoutIntersectionObserver {
+        readonly root = null;
+        readonly rootMargin = "200% 0px";
+        readonly thresholds = [0];
+        observe = observe;
+        unobserve = vi.fn();
+        disconnect = vi.fn();
+        takeRecords(): IntersectionObserverEntry[] { return []; }
+      },
+    });
+    vi.stubGlobal("IntersectionObserver", class MainWindowIntersectionObserver {
+      constructor() {
+        throw new Error("main-window IntersectionObserver was used");
+      }
+    });
+    const root = popout.document.createElement("section") as unknown as HTMLElement;
+    const { engine } = engineFor([documentHandle([pageHandle(1)])]);
+    const renderer = new PdfPreviewRenderer(root, { engine });
+
+    await renderer.render(new Uint8Array([1]));
+
+    expect(observe).toHaveBeenCalledOnce();
+    await renderer.dispose();
+    popout.close();
+  });
+
   it("discards a loading generation superseded by newer PDF bytes", async () => {
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({} as CanvasRenderingContext2D);
     const first = deferred<PdfDocumentHandle>();
