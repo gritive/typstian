@@ -338,18 +338,27 @@ describe("system font directories", () => {
   });
 
   it("returns absolute directories without duplicates", () => {
+    let declaringDirectory = "";
     const directories = linuxDirectoriesFor(
-      () => `<fontconfig>
+      (root) => {
+        declaringDirectory = root;
+        return `<fontconfig>
   <dir>/usr/share/fonts/</dir>
   <dir>//usr/share/fonts</dir>
   <dir>/usr/local/share/./fonts</dir>
   <dir>/opt/twice</dir>
   <dir>/opt/twice</dir>
   <dir>relative/fonts</dir>
-</fontconfig>`,
+</fontconfig>`;
+      },
     );
 
     expect(directories).toEqual([...new Set(directories)]);
+    // Dropped, not resolved. Only an include resolves a relative name against
+    // the declaring file's directory; a relative <dir> that got the same
+    // treatment would still be absolute, so `every(isAbsolute)` below cannot
+    // notice it — it has to be named.
+    expect(directories).not.toContain(path.join(declaringDirectory, "relative/fonts"));
     expect(directories.every((directory) => path.isAbsolute(directory))).toBe(true);
     expect(directories).toContain("/opt/twice");
     // Spellings of a path already in the standard list must not reappear:
