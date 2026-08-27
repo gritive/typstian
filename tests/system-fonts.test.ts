@@ -149,6 +149,20 @@ describe("system font directories", () => {
     expect(directories).toContain("/opt/etc-fonts");
   });
 
+  it("falls back to ~/.config/fontconfig when no config home is set", () => {
+    const directories = withFontconfig({ XDG_CONFIG_HOME: undefined }, () =>
+      withVirtualFontconfig(
+        {
+          [path.join(os.homedir(), ".config/fontconfig/fonts.conf")]:
+            "<fontconfig><dir>/opt/home-config-fonts</dir></fontconfig>",
+        },
+        () => withPlatform("linux", () => systemFontDirectories()),
+      ),
+    );
+
+    expect(directories).toContain("/opt/home-config-fonts");
+  });
+
   it("ranks the user's fontconfig directories after the user's font directories and before the system's", () => {
     const directories = withFontconfig(
       { XDG_DATA_HOME: "/data/home" },
