@@ -9,10 +9,9 @@ import { SaxesParser } from "saxes";
 // else: it maps the environment onto a list of directories, and never opens a
 // font. `src/system-fonts.ts` decides what to do with the list.
 //
-// fontconfig's configuration is XML, but the only thing discovery needs from it
-// is the `<dir>` elements. A regex over the comment-stripped text avoids
-// pulling in a parser — and avoids depending on DOMParser, which exists in the
-// renderer but not in the worker or in tests.
+// A SAX pass validates each complete fontconfig XML document before targeted
+// extraction preserves its prefix and include semantics. This avoids depending
+// on DOMParser, which exists in the renderer but not in the worker or in tests.
 //
 // Discovery runs synchronously on the thread that initializes the engine, so
 // these bound what a hostile or merely broken fontconfig tree can cost it. A

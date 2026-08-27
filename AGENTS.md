@@ -137,7 +137,7 @@ and embeds the result in `main.js`; Community releases contain only `main.js`,
   and `MAX_FONTCONFIG_INCLUDE_DEPTH`. Bounds: `MAX_SYSTEM_FONT_DIRECTORIES`, `MAX_SYSTEM_FONT_FILES`,
   `MAX_SYSTEM_FONT_SCAN_BYTES`, `MAX_SYSTEM_FONT_BYTES`, and, because
   discovery runs synchronously on the init thread,
-  `MAX_FONTCONFIG_FILE_BYTES`, `MAX_FONTCONFIG_FRAGMENTS`, and
+  `MAX_FONTCONFIG_FILE_BYTES`, `MAX_FONTCONFIG_FILES`, `MAX_FONTCONFIG_FRAGMENTS`, and
   `MAX_FONTCONFIG_INCLUDE_DEPTH`. The worker retains parsed metadata; selected font bytes
   load through an allowlisted callback only for the active compile, capped at
   128 MiB in aggregate. Keep network,
