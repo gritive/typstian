@@ -608,3 +608,53 @@ fn rejects_documents_over_the_supported_page_size() {
         Ok(_) => panic!("document over the supported page size compiled"),
     }
 }
+
+#[test]
+fn compiles_documents_at_the_supported_page_count() {
+    let source = "#set page(width: 10pt, height: 10pt, margin: 0pt)\n\
+                  #for _ in range(999) { pagebreak(weak: false) }";
+    let compiled = Session::new()
+        .compile(CompileRequest {
+            clock: CLOCK,
+            entry: "main.typ".into(),
+            revision: 1,
+            files: vec![file_input("main.typ", source.as_bytes())],
+            packages: Vec::new(),
+        })
+        .expect("document at the supported page count compiles");
+
+    assert_eq!(compiled.pages.len(), 1000);
+}
+
+#[test]
+fn compiles_documents_at_the_supported_page_size() {
+    let source = "#set page(width: 14400pt, height: 10pt, margin: 0pt)\nSupported";
+    let compiled = Session::new()
+        .compile(CompileRequest {
+            clock: CLOCK,
+            entry: "main.typ".into(),
+            revision: 1,
+            files: vec![file_input("main.typ", source.as_bytes())],
+            packages: Vec::new(),
+        })
+        .expect("document at the supported page size compiles");
+
+    assert_eq!(compiled.pages[0].width_pt, 14_400.0);
+}
+
+#[test]
+fn rejects_documents_over_the_supported_page_height() {
+    let source = "#set page(width: 10pt, height: 14401pt, margin: 0pt)\nOversized";
+    let result = Session::new().compile(CompileRequest {
+        clock: CLOCK,
+        entry: "main.typ".into(),
+        revision: 1,
+        files: vec![file_input("main.typ", source.as_bytes())],
+        packages: Vec::new(),
+    });
+
+    match result {
+        Err(error) => assert_eq!(error, "document page exceeds 14400 point edge limit"),
+        Ok(_) => panic!("document over the supported page height compiled"),
+    }
+}
