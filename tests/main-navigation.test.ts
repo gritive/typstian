@@ -691,6 +691,31 @@ describe("TypstianPlugin preview entry points", () => {
     expect(forFolder.map((item) => item.title)).toEqual(["New Typst file"]);
     plugin.onunload();
   });
+
+  // The mirror of "keeps the folder menu out of folders the compiler cannot
+  // reach": creating a file outside the root hands the user something nothing
+  // can compile, but opening a preview only reports the root problem, so the
+  // file item must survive where the folder item does not.
+  it("offers the preview on a Typst file the compilation root does not cover", async () => {
+    const { internals, menuCallbacks, plugin } = harness([]);
+    vi.spyOn(internals, "compilationRoot").mockReturnValue("/vault/book");
+    const openPreview = vi.spyOn(internals, "openPreview").mockResolvedValue();
+    await plugin.onload();
+
+    const outside = fileAt("notes/main.typ");
+    const forFile = menuItems(menuCallbacks[0]!, outside);
+    const forFolder = menuItems(
+      menuCallbacks[0]!,
+      Object.assign(new TFolder(), { path: "notes" }),
+    );
+
+    expect(forFile.map((item) => item.title)).toEqual(["Open Typst preview"]);
+    expect(forFolder.map((item) => item.title)).not.toContain("New Typst file");
+
+    forFile[0]!.click();
+    expect(openPreview).toHaveBeenCalledWith("notes/main.typ");
+    plugin.onunload();
+  });
 });
 
 describe("TypstianPlugin completion routing", () => {
