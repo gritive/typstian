@@ -9,7 +9,7 @@ import {
   MAX_FONTCONFIG_FRAGMENTS,
   MAX_FONTCONFIG_INCLUDE_DEPTH,
   MAX_SYSTEM_FONT_BYTES,
-  MAX_SYSTEM_FONT_FILES,
+  MAX_SYSTEM_FONT_DIRECTORIES,
   registerSystemFonts,
   systemFontDirectories,
 } from "../src/system-fonts";
@@ -835,7 +835,7 @@ describe("system font loading", () => {
       return Promise.resolve(canonical);
     });
     const readdir = vi.spyOn(fs.promises, "readdir").mockImplementation((() => {
-      if (canonicalIndex > MAX_SYSTEM_FONT_FILES) return Promise.resolve([]);
+      if (canonicalIndex > MAX_SYSTEM_FONT_DIRECTORIES) return Promise.resolve([]);
       return Promise.resolve([{
         name: "next",
         isDirectory: () => true,
@@ -847,7 +847,7 @@ describe("system font loading", () => {
     try {
       await registerSystemFonts(["/virtual/root"], vi.fn());
 
-      expect(readdir).toHaveBeenCalledTimes(MAX_SYSTEM_FONT_FILES);
+      expect(readdir).toHaveBeenCalledTimes(MAX_SYSTEM_FONT_DIRECTORIES);
     } finally {
       realpath.mockRestore();
       readdir.mockRestore();

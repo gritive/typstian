@@ -16,6 +16,7 @@ export {
 
 export const MAX_SYSTEM_FONT_BYTES = 64 * 1024 * 1024;
 
+export const MAX_SYSTEM_FONT_DIRECTORIES = 10_000;
 export const MAX_SYSTEM_FONT_FILES = 10_000;
 export const MAX_SYSTEM_FONT_SCAN_BYTES = 2 * 1024 * 1024 * 1024;
 
@@ -44,7 +45,7 @@ async function discoverFontFiles(
   while (
     pending.length > 0 &&
     fonts.size < MAX_SYSTEM_FONT_FILES &&
-    visitedDirectories.size < MAX_SYSTEM_FONT_FILES
+    visitedDirectories.size < MAX_SYSTEM_FONT_DIRECTORIES
   ) {
     throwIfAborted(signal);
     const next = pending.shift();
@@ -201,6 +202,13 @@ export async function registerSystemFonts(
   return registeredFontReader(allowed);
 }
 
+function posixEnvPathOrFallback(
+  configured: string | undefined,
+  fallback: string,
+): string {
+  return configured && path.posix.isAbsolute(configured) ? configured : fallback;
+}
+
 export function systemFontDirectories(): string[] {
   const home = os.homedir();
   if (process.platform === "darwin") {
@@ -228,19 +236,17 @@ export function systemFontDirectories(): string[] {
     ];
   }
 
-  const configuredDataHome = process.env.XDG_DATA_HOME;
-  const dataHome =
-    configuredDataHome && path.isAbsolute(configuredDataHome)
-      ? configuredDataHome
-      : path.join(home, ".local/share");
+  const dataHome = posixEnvPathOrFallback(
+    process.env.XDG_DATA_HOME,
+    path.join(home, ".local/share"),
+  );
   const dataDirectories = (process.env.XDG_DATA_DIRS ?? "/usr/local/share:/usr/share")
     .split(path.delimiter)
     .filter((directory) => path.isAbsolute(directory));
-  const configuredConfigHome = process.env.XDG_CONFIG_HOME;
-  const configHome =
-    configuredConfigHome && path.isAbsolute(configuredConfigHome)
-      ? configuredConfigHome
-      : path.join(home, ".config");
+  const configHome = posixEnvPathOrFallback(
+    process.env.XDG_CONFIG_HOME,
+    path.join(home, ".config"),
+  );
   const { system: systemFontconfig, user: userFontconfig } = fontconfigDirectories({
     home,
     dataHome,
