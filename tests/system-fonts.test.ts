@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   MAX_FONTCONFIG_FILE_BYTES,
+  MAX_FONTCONFIG_FRAGMENTS,
   MAX_SYSTEM_FONT_BYTES,
   registerSystemFonts,
   systemFontDirectories,
@@ -275,6 +276,28 @@ describe("system font directories", () => {
 
     expect(directories).not.toContain("/opt/oversized-declaration");
     expect(directories).toContain("/usr/share/fonts");
+  });
+
+  it("reads at most the bounded number of conf.d fragments", () => {
+    const directories = withFontconfig({}, (root) => {
+      const fontconfigPath = path.join(root, "fonts");
+      const confD = path.join(fontconfigPath, "conf.d");
+      fs.mkdirSync(confD, { recursive: true });
+      for (let index = 0; index <= MAX_FONTCONFIG_FRAGMENTS; index += 1) {
+        fs.writeFileSync(
+          // Zero-padded so the sort order is the numeric one and the last
+          // fragment written is the one past the bound.
+          path.join(confD, `${String(index).padStart(5, "0")}.conf`),
+          `<fontconfig><dir>/opt/fragment-${index}</dir></fontconfig>`,
+        );
+      }
+      vi.stubEnv("FONTCONFIG_PATH", fontconfigPath);
+      return withPlatform("linux", () => systemFontDirectories());
+    });
+
+    expect(directories).toContain("/opt/fragment-0");
+    expect(directories).toContain(`/opt/fragment-${MAX_FONTCONFIG_FRAGMENTS - 1}`);
+    expect(directories).not.toContain(`/opt/fragment-${MAX_FONTCONFIG_FRAGMENTS}`);
   });
 
   it("leaves macOS and Windows alone and never consults fontconfig there", () => {

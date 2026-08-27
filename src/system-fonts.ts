@@ -227,6 +227,9 @@ function readFontconfigRoot(directory: string, roots: FontconfigRoots): string[]
       .readdirSync(confD)
       .filter((entry) => entry.endsWith(".conf"))
       .sort()
+      // Sorted first, so the bound cuts the tail rather than an arbitrary set:
+      // fontconfig's own numeric prefixes put the important fragments early.
+      .slice(0, MAX_FONTCONFIG_FRAGMENTS)
       .map((entry) => path.join(confD, entry));
   } catch {
     fragments = [];
