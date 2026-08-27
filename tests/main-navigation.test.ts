@@ -290,6 +290,7 @@ function harness(leaves: DeferredLeaf[]) {
       refresh(): void;
     }>;
     publishDiagnostics(result: unknown): void;
+    openPreview(sourcePath: string): Promise<void>;
     savePdf(sourcePath: string): Promise<void>;
     settings: { rootPath: string };
     vaultRoot(): string;
@@ -451,26 +452,26 @@ describe("TypstianPlugin source navigation", () => {
   });
 });
 
-describe("TypstianPlugin Typst file creation", () => {
-  function menuItems(callback: (menu: unknown, file: unknown) => void, file: unknown) {
-    const items: Array<{ title: string; click: () => void }> = [];
-    const menu = {
-      addItem(build: (item: unknown) => void) {
-        const item = {
-          setTitle(title: string) { entry.title = title; return item; },
-          setIcon() { return item; },
-          onClick(handler: () => void) { entry.click = handler; return item; },
-        };
-        const entry = { title: "", click: (): void => undefined };
-        build(item);
-        items.push(entry);
-        return menu;
-      },
-    };
-    callback(menu, file);
-    return items;
-  }
+function menuItems(callback: (menu: unknown, file: unknown) => void, file: unknown) {
+  const items: Array<{ title: string; click: () => void }> = [];
+  const menu = {
+    addItem(build: (item: unknown) => void) {
+      const item = {
+        setTitle(title: string) { entry.title = title; return item; },
+        setIcon() { return item; },
+        onClick(handler: () => void) { entry.click = handler; return item; },
+      };
+      const entry = { title: "", click: (): void => undefined };
+      build(item);
+      items.push(entry);
+      return menu;
+    },
+  };
+  callback(menu, file);
+  return items;
+}
 
+describe("TypstianPlugin Typst file creation", () => {
   it("creates Untitled.typ at the compilation root and opens it in the editor", async () => {
     const target = deferredLeaf();
     target.finish();
@@ -622,7 +623,7 @@ describe("TypstianPlugin Typst file creation", () => {
 
     const forFolder = menuItems(menuCallbacks[0]!, Object.assign(new TFolder(), { path: "book" }));
     const forFile = menuItems(menuCallbacks[0]!, fileAt("book/main.typ"));
-    expect(forFile).toHaveLength(0);
+    expect(forFile.map((item) => item.title)).not.toContain("New Typst file");
     expect(forFolder.map((item) => item.title)).toEqual(["New Typst file"]);
 
     forFolder[0]!.click();
@@ -630,6 +631,21 @@ describe("TypstianPlugin Typst file creation", () => {
       expect(vault.create).toHaveBeenCalledWith("book/Untitled.typ", "= Untitled\n");
     });
     expect(commands.get("create-typst-file")).toBeDefined();
+    plugin.onunload();
+  });
+});
+
+describe("TypstianPlugin preview entry points", () => {
+  it("opens the preview from the file menu of a Typst file", async () => {
+    const { internals, menuCallbacks, plugin } = harness([]);
+    const openPreview = vi.spyOn(internals, "openPreview").mockResolvedValue();
+    await plugin.onload();
+
+    const items = menuItems(menuCallbacks[0]!, fileAt("book/main.typ"));
+
+    expect(items.map((item) => item.title)).toEqual(["Open Typst preview"]);
+    items[0]!.click();
+    expect(openPreview).toHaveBeenCalledWith("book/main.typ");
     plugin.onunload();
   });
 });

@@ -165,6 +165,15 @@ export default class TypstianPlugin extends Plugin {
     // The file explorer's folder menu is where a user looks to create something
     // in a folder, and the command palette cannot express "in this folder".
     this.registerEvent(this.app.workspace.on("file-menu", (menu, file) => {
+      // Not gated on the compilation root: opening a preview only reports the
+      // root problem, the way `open-typst-preview` does.
+      if (file instanceof TFile && file.extension === "typ") {
+        menu.addItem((item) => item
+          .setTitle("Open Typst preview")
+          .setIcon("file-text")
+          .onClick(() => { void this.openPreview(file.path); }));
+        return;
+      }
       if (!(file instanceof TFolder)) return;
       // Offering it outside the compilation root would hand the user a file
       // nothing can compile — the failure this command exists to undo.
