@@ -144,6 +144,26 @@ describe("system font directories", () => {
       directories.indexOf("/usr/share/fonts"),
     );
   });
+
+  it("keeps the standard paths when the fontconfig configuration is missing or malformed", () => {
+    const malformed = withFontconfig({}, (root) => {
+      const configuration = path.join(root, "broken.conf");
+      fs.writeFileSync(configuration, "<fontconfig><dir>/opt/truncated");
+      vi.stubEnv("FONTCONFIG_FILE", configuration);
+      return withPlatform("linux", () => systemFontDirectories());
+    });
+    const absent = withFontconfig({}, (root) =>
+      withPlatform("linux", () => {
+        vi.stubEnv("FONTCONFIG_FILE", path.join(root, "nothing-here.conf"));
+        return systemFontDirectories();
+      }),
+    );
+
+    expect(malformed).not.toContain("/opt/truncated");
+    expect(malformed).toContain("/usr/share/fonts");
+    expect(absent).toContain("/usr/share/fonts");
+    expect(absent).toContain(path.join(os.homedir(), ".fonts"));
+  });
 });
 
 describe("system font loading", () => {
