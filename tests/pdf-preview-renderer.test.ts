@@ -674,6 +674,34 @@ describe("PdfPreviewRenderer", () => {
     expect(onPoint).not.toHaveBeenCalled();
   });
 
+  it("preserves interactive clicks in a popout window", async () => {
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext")
+      .mockReturnValue({} as CanvasRenderingContext2D);
+    const popout = new Window();
+    const root = popout.document.createElement("section") as unknown as HTMLElement;
+    const { engine } = engineFor([documentHandle([pageHandle(1)])]);
+    const onPoint = vi.fn();
+    const renderer = new PdfPreviewRenderer(root, { engine, onPoint });
+    await renderer.render(new Uint8Array([1]));
+    const page = root.querySelector<HTMLElement>(".typst-pdf-page");
+    if (page === null) throw new Error("missing popout PDF page");
+    setRect(page, { left: 0, top: 0, width: 600, height: 800 });
+    const link = popout.document.createElement("a") as unknown as HTMLElement;
+    link.setAttribute("href", "#destination");
+    page.append(link);
+
+    vi.stubGlobal("Element", class MainWindowElement {});
+    link.dispatchEvent(new popout.MouseEvent("click", {
+      bubbles: true,
+      clientX: 300,
+      clientY: 400,
+    }) as unknown as MouseEvent);
+
+    expect(onPoint).not.toHaveBeenCalled();
+    await renderer.dispose();
+    popout.close();
+  });
+
   it("maps the visual top to top-left Typst points and rejects letterbox clicks", async () => {
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({} as CanvasRenderingContext2D);
     const root = document.createElement("section");

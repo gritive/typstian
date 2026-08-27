@@ -644,7 +644,7 @@ private pageObserver: IntersectionObserver | null = null;
         return;
       }
       const target = event.target;
-      const interactiveTarget = target instanceof Element
+      const interactiveTarget = target instanceof pageElement.win.Element
         ? target.closest("a[href], button, input, select, textarea, [role=button]")
         : null;
       if (interactiveTarget !== null && interactiveTarget !== pageElement) return;
