@@ -20,6 +20,8 @@ export class TextFileView {
   }
 }
 
+export const Platform = { isMacOS: false };
+
 export class View {
   constructor(public readonly leaf?: unknown) {}
 }

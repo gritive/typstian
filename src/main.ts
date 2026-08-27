@@ -162,8 +162,10 @@ export default class TypstianPlugin extends Plugin {
         this.followInAllPreviews(leaf.view.file.path);
       }
     }));
-    // The file explorer's folder menu is where a user looks to create something
-    // in a folder, and the command palette cannot express "in this folder".
+    // The file explorer's context menu is where a user looks for what can be
+    // done to a file or a folder: previewing the Typst file they right-clicked,
+    // and creating one inside a folder — which the command palette cannot
+    // express, having no way to say "in this folder".
     this.registerEvent(this.app.workspace.on("file-menu", (menu, file) => {
       // Not gated on the compilation root: opening a preview only reports the
       // root problem, the way `open-typst-preview` does.

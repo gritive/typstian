@@ -10,6 +10,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { DependencyIndex } from "../src/dependency-index";
 import TypstianPlugin from "../src/main";
 import { TypstEditorView } from "../src/editor-view";
+import { headerActions } from "./stubs/view-actions";
 
 interface DeferredLeaf {
   view: unknown;
@@ -453,12 +454,6 @@ describe("TypstianPlugin source navigation", () => {
   });
 });
 
-function editorActions(view: TypstEditorView) {
-  return (view as unknown as {
-    actions: Array<{ icon: string; title: string; callback: () => void }>;
-  }).actions;
-}
-
 function menuItems(callback: (menu: unknown, file: unknown) => void, file: unknown) {
   const items: Array<{ title: string; click: () => void }> = [];
   const menu = {
@@ -660,8 +655,9 @@ describe("TypstianPlugin preview entry points", () => {
     const { internals, plugin } = harness([]);
     const openPreview = vi.spyOn(internals, "openPreview").mockResolvedValue();
     await plugin.onload();
-    const view = internals.createEditorView({} as never);
-    const action = editorActions(view).find((entry) => entry.title === "Open Typst preview");
+    const leaf = { app: { vault: { modify: vi.fn() } } } as unknown as WorkspaceLeaf;
+    const view = internals.createEditorView(leaf);
+    const action = headerActions(view).find((entry) => entry.title === "Open Typst preview");
 
     // No file yet: the leaf has nothing to preview.
     action?.callback();

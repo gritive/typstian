@@ -203,6 +203,17 @@ and embeds the result in `main.js`; Community releases contain only `main.js`,
   name. A new file starts with a heading, not empty, because an empty Typst
   source compiles to a document with no pages and a blank preview reads as a
   broken plugin.
+- **The preview needs an entry point that is visible, not only findable.**
+  `open-typst-preview` stayed a `checkCallback` gated on an active Typst editor,
+  which is right for a palette command and useless as discovery — the reporter of
+  issue #1 could create a `.typ` file and still not find the preview. Two visible
+  entry points answer that: the `Open Typst preview` header action
+  `TypstEditorView` registers in its constructor, and the `file-menu` item on a
+  `.typ` `TFile`. Both route through `openPreview`, the same path the command
+  takes. The file item is deliberately *not* gated on the compilation root the
+  way `New Typst file` is — creating a file outside the root hands the user
+  something nothing can compile, while opening a preview only reports the
+  problem. `docs/specs/preview-entry-points.md` holds the requirements.
 - **Renderer code must not touch main-window globals.** A preview can live in a
   popout window, so timers, `getComputedStyle`, `getSelection`, and
   `activeElement` go through the element's own `win`/`doc`, and elements are
@@ -245,3 +256,7 @@ and embeds the result in `main.js`; Community releases contain only `main.js`,
 0003 source-to-preview search, 0004 bundled WASM compiler, and 0005
 unsaved-buffer live preview. Read the relevant
 ADR before changing preview, search, or compiler integration.
+
+`docs/specs/` holds the requirements a change was accepted against, one file per
+change, written before the code: `preview-entry-points.md`. An ADR records why
+an architecture is the way it is; a spec records what a change had to do.

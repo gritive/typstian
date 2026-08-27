@@ -11,28 +11,9 @@ import { forEachDiagnostic } from "@codemirror/lint";
 import { SearchQuery, setSearchQuery } from "@codemirror/search";
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("obsidian", () => ({
-  Platform: { isMacOS: false },
-  TextFileView: class {
-    contentEl = document.createElement("div");
-    data = "";
-    file: unknown = null;
-    requestSave = vi.fn();
-    // Obsidian's view header actions; the stub records them so a test can
-    // activate one the way a click would.
-    actions: Array<{ icon: string; title: string; callback: () => void }> = [];
-
-    constructor() {}
-
-    addAction(icon: string, title: string, callback: () => void): HTMLElement {
-      this.actions.push({ icon, title, callback });
-      return document.createElement("div");
-    }
-  },
-}));
-
 import { TYPST_VIEW_TYPE, TypstEditorView, utf8ByteOffset } from "../src/editor-view";
 import { ForwardSearchScheduler } from "../src/forward-search-scheduler";
+import { headerActions } from "./stubs/view-actions";
 
 function createView(onDirty = vi.fn(), onForwardSearch = vi.fn()) {
   const modify = vi.fn();
@@ -40,12 +21,6 @@ function createView(onDirty = vi.fn(), onForwardSearch = vi.fn()) {
   const view = new TypstEditorView(leaf, { onDirty, onForwardSearch });
   document.body.appendChild(view.contentEl);
   return { view, modify, onDirty, onForwardSearch };
-}
-
-function viewActions(view: TypstEditorView) {
-  return (view as unknown as {
-    actions: Array<{ icon: string; title: string; callback: () => void }>;
-  }).actions;
 }
 
 function collectDiagnostics(view: TypstEditorView) {
@@ -418,11 +393,19 @@ describe("TypstEditorView", () => {
     const view = new TypstEditorView(leaf, { onOpenPreview });
     view.file = { path: "book/main.typ" } as unknown as TFile;
 
-    const action = viewActions(view).find((entry) => entry.title === "Open Typst preview");
+    const action = headerActions(view).find((entry) => entry.title === "Open Typst preview");
     action?.callback();
 
     expect(action).toBeDefined();
     expect(onOpenPreview).toHaveBeenCalledWith("book/main.typ");
+  });
+
+  it("offers no preview action when nothing can open a preview", () => {
+    const leaf = { app: { vault: { modify: vi.fn() } } } as unknown as WorkspaceLeaf;
+    const view = new TypstEditorView(leaf);
+
+    expect(headerActions(view).map((entry) => entry.title))
+      .not.toContain("Open Typst preview");
   });
 
   it("invalidates its forward-search owner when closed", async () => {
