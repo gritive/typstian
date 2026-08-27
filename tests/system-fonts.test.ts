@@ -50,6 +50,26 @@ function withFontconfig<T>(
   }
 }
 
+// The default configuration roots are absolute paths a test cannot create, so
+// pinning them means serving a virtual filesystem to discovery and observing
+// which paths it asks for. Anything not in `files` reads as absent.
+function withVirtualFontconfig<T>(files: Record<string, string>, run: () => T): T {
+  const readFile = vi.spyOn(fs, "readFileSync").mockImplementation(((file: string) => {
+    const contents = files[file];
+    if (contents === undefined) throw new Error(`ENOENT: ${file}`);
+    return contents;
+  }) as unknown as typeof fs.readFileSync);
+  const readDir = vi.spyOn(fs, "readdirSync").mockImplementation((() => {
+    throw new Error("ENOENT");
+  }) as unknown as typeof fs.readdirSync);
+  try {
+    return run();
+  } finally {
+    readFile.mockRestore();
+    readDir.mockRestore();
+  }
+}
+
 describe("system font directories", () => {
   it("includes the mount points a sandboxed Obsidian sees host fonts at", () => {
     const directories = withPlatform("linux", () => systemFontDirectories());
@@ -116,6 +136,17 @@ describe("system font directories", () => {
     expect(directories).toContain("/opt/system-fonts");
     expect(directories).toContain("/opt/fragment-fonts");
     expect(directories).not.toContain("/opt/ignored");
+  });
+
+  it("falls back to /etc/fonts when no fontconfig path is set", () => {
+    const directories = withFontconfig({ FONTCONFIG_PATH: undefined }, () =>
+      withVirtualFontconfig(
+        { "/etc/fonts/fonts.conf": "<fontconfig><dir>/opt/etc-fonts</dir></fontconfig>" },
+        () => withPlatform("linux", () => systemFontDirectories()),
+      ),
+    );
+
+    expect(directories).toContain("/opt/etc-fonts");
   });
 
   it("ranks the user's fontconfig directories after the user's font directories and before the system's", () => {
