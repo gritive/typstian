@@ -619,6 +619,36 @@ describe("system font directories", () => {
     expect(directories).not.toContain(`/opt/fragment-${MAX_FONTCONFIG_FRAGMENTS}`);
   });
 
+
+  it("shares one configuration-file budget across recursive includes", () => {
+    const entry = "/opt/conf/fonts.conf";
+    const included = (index: number) => `/opt/conf/include-${index}.conf`;
+    const files: Record<string, string> = {
+      [entry]: `<fontconfig>${Array.from(
+        { length: MAX_FONTCONFIG_FRAGMENTS },
+        (_, index) => `<include>${included(index)}</include>`,
+      ).join("")}</fontconfig>`,
+    };
+    for (let index = 0; index < MAX_FONTCONFIG_FRAGMENTS; index += 1) {
+      files[included(index)] =
+        `<fontconfig><dir>/opt/budget-${index}</dir></fontconfig>`;
+    }
+
+    const { directories, reads } = withFontconfig({}, () =>
+      withVirtualFontconfig(files, (reads) => {
+        vi.stubEnv("FONTCONFIG_FILE", entry);
+        return {
+          directories: withPlatform("linux", () => systemFontDirectories()),
+          reads,
+        };
+      }),
+    );
+
+    expect(reads).toHaveLength(MAX_FONTCONFIG_FRAGMENTS);
+    expect(directories).toContain(`/opt/budget-${MAX_FONTCONFIG_FRAGMENTS - 2}`);
+    expect(directories).not.toContain(`/opt/budget-${MAX_FONTCONFIG_FRAGMENTS - 1}`);
+  });
+
   it("leaves macOS and Windows alone and never consults fontconfig there", () => {
     const { darwin, win32 } = withFontconfig(
       { LOCALAPPDATA: "C:\\Users\\me\\AppData\\Local", WINDIR: undefined },

@@ -133,6 +133,7 @@ function parseFontconfigElements(
 interface FontconfigScan {
   readonly prefixes: FontconfigPrefixes;
   readonly visited: Set<string>;
+  filesRemaining: number;
 }
 
 // One configuration root contributes its own fonts.conf plus every fragment in
@@ -163,8 +164,15 @@ function dotConfFiles(directory: string): string[] {
 
 function readFontconfigFile(file: string, scan: FontconfigScan, depth = 0): string[] {
   const { prefixes, visited } = scan;
-  if (depth > MAX_FONTCONFIG_INCLUDE_DEPTH || visited.has(file)) return [];
+  if (
+    depth > MAX_FONTCONFIG_INCLUDE_DEPTH ||
+    visited.has(file) ||
+    scan.filesRemaining <= 0
+  ) {
+    return [];
+  }
   visited.add(file);
+  scan.filesRemaining -= 1;
   try {
     // Size first, so an oversized file is never pulled into memory at all.
     if (fs.statSync(file).size > MAX_FONTCONFIG_FILE_BYTES) return [];
@@ -200,7 +208,11 @@ function expandConfigurationFile(
 // Every `<dir>` the system's and the user's fontconfig configuration declare.
 // One scan, so a file reachable from both halves is still read only once.
 export function fontconfigDirectories(prefixes: FontconfigPrefixes): FontconfigDirectories {
-  const scan: FontconfigScan = { prefixes, visited: new Set() };
+  const scan: FontconfigScan = {
+    prefixes,
+    visited: new Set(),
+    filesRemaining: MAX_FONTCONFIG_FRAGMENTS,
+  };
   // FONTCONFIG_PATH is a search path, not a directory: fontconfig reads every
   // root on it, the way XDG_DATA_DIRS is read by the caller.
   const configurationRoots = (process.env.FONTCONFIG_PATH ?? "/etc/fonts")
