@@ -40,4 +40,22 @@ describe("collectDirtyBuffers", () => {
 
     expect(overlay.size).toBe(0);
   });
+
+  it("rejects one dirty buffer over the vault input file limit", () => {
+    const oversized = "a".repeat(50 * 1024 * 1024 + 1);
+
+    expect(() => collectDirtyBuffers(vault, vault, [
+      { path: "main.typ", text: oversized },
+    ])).toThrow("Dirty Typst buffer main.typ exceeded the 50 MiB file limit.");
+  });
+
+  it("rejects dirty buffers over the aggregate vault input limit", () => {
+    const first = "a".repeat(40 * 1024 * 1024);
+    const second = "b".repeat(30 * 1024 * 1024 + 1);
+
+    expect(() => collectDirtyBuffers(vault, vault, [
+      { path: "main.typ", text: first },
+      { path: "chapter.typ", text: second },
+    ])).toThrow("Dirty Typst buffers exceeded the 70 MiB aggregate limit.");
+  });
 });

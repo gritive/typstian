@@ -13,6 +13,7 @@ import { resolve } from "node:path";
 
 import { escapesRoot } from "./path-policy";
 
+export const MAX_VAULT_INPUT_BYTES = 70 * 1024 * 1024;
 export const MAX_VAULT_INPUT_FILE_BYTES = 50 * 1024 * 1024;
 
 function isSafeRelativePath(path: string): boolean {

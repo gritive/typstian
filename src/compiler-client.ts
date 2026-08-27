@@ -545,7 +545,6 @@ export class TypstianCompilerClient {
   private readonly maxPdfBytes: number;
   private readonly maxRequestBytes: number;
   private readonly maxCompletionBytes: number;
-  private compileOverlay: ReadonlyMap<string, Uint8Array> | undefined;
   private readonly engineFactory: WasmEngineFactory;
   private readonly pending = new Set<PendingRequest>();
   private readonly disposedEngines = new WeakSet<WasmEngine>();
@@ -609,10 +608,13 @@ export class TypstianCompilerClient {
     }
     this.latestCompileRevision = request.revision;
     this.latestDocumentRevision = undefined;
-    this.compileOverlay = request.overlay;
     return this.enqueue(
       "compile",
-      { revision: request.revision, entryPath: request.entryPath },
+      {
+        revision: request.revision,
+        entryPath: request.entryPath,
+        ...(request.overlay === undefined ? {} : { overlay: request.overlay }),
+      },
       (response) => parseCompile(response, request.revision, this.maxPdfBytes),
       request.signal,
     ).then((result) => {
@@ -924,7 +926,9 @@ export class TypstianCompilerClient {
         return engine.compile({
           revision: payload.revision as number,
           entryPath: payload.entryPath as string,
-          ...(this.compileOverlay === undefined ? {} : { overlay: this.compileOverlay }),
+          ...(payload.overlay === undefined
+            ? {}
+            : { overlay: payload.overlay as ReadonlyMap<string, Uint8Array> }),
         });
       case "jump":
         return engine.jump(

@@ -21,7 +21,11 @@ import {
   type LocalPackages,
 } from "./typst-packages";
 import { MAX_SELECTED_FONT_BYTES } from "./font-residency";
-import { rootedReadFile, rootedReadFileAsync } from "./wasm-vault-reader";
+import {
+  MAX_VAULT_INPUT_BYTES,
+  rootedReadFile,
+  rootedReadFileAsync,
+} from "./wasm-vault-reader";
 import { compileRequestJson, hostClock } from "./compile-request";
 
 declare const __TYPSTIAN_WASM_BROTLI__: string | undefined;
@@ -32,7 +36,6 @@ let wasmInitialization: Promise<void> | undefined;
 let wasmModuleInitialization: Promise<WebAssembly.Module> | undefined;
 
 const decompressBrotli = promisify(brotliDecompress);
-const MAX_VAULT_INPUT_BYTES = 70 * 1024 * 1024;
 const MAX_COMPILER_INPUT_PATHS = 10_000;
 
 function loadWasmBytes(wasmPath: string): Promise<Uint8Array> {

@@ -1,4 +1,7 @@
 // @vitest-environment happy-dom
+import vm from "node:vm";
+import v8 from "node:v8";
+
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -7,6 +10,12 @@ import {
   type WasmEngine,
   type WasmEngineFactory,
 } from "../src/compiler-client";
+
+function collectGarbage(): void {
+  v8.setFlagsFromString("--expose_gc");
+  const gc = vm.runInNewContext("gc") as () => void;
+  gc();
+}
 
 class FakeWasmEngine implements WasmEngine {
   readonly calls: Array<{ kind: string; payload: object }> = [];
@@ -339,6 +348,39 @@ it("passes the pinned overlay snapshot to the engine compile request", async () 
 
     client.close();
     await expect(compile).rejects.toMatchObject({ code: "closed" });
+  });
+
+  it("releases a dirty-buffer overlay after its compile settles", async () => {
+    const { client, engines } = harness();
+    let overlay: ReadonlyMap<string, Uint8Array> | undefined = new Map([
+      ["docs/main.typ", Uint8Array.from([1, 2, 3])],
+    ]);
+    const reference = new WeakRef(overlay);
+    const compile = client.compile({
+      revision: 1,
+      entryPath: "docs/main.typ",
+      overlay,
+    });
+
+    await vi.waitFor(() => expect(engines[0]?.calls).toHaveLength(1));
+    engines[0]!.respond({
+      type: "compiled",
+      revision: 1,
+      pdfBase64: pdf.toString("base64"),
+      pdfBytes: pdf.length,
+      pages: [{ widthPt: 240, heightPt: 180 }],
+      dependencies: ["docs/main.typ"],
+      diagnostics: [],
+    });
+    await compile;
+
+    engines[0]!.calls.length = 0;
+    overlay = undefined;
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    collectGarbage();
+
+    expect(reference.deref()).toBeUndefined();
+    client.close();
   });
 
   it("returns compile diagnostics without classifying them as an engine crash", async () => {
