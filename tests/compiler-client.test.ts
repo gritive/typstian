@@ -388,8 +388,6 @@ it("passes the pinned overlay snapshot to the engine compile request", async () 
     client.close();
   });
 
-  it("releases a dirty-buffer overlay after its compile settles", );
-
   it("returns compile diagnostics without classifying them as an engine crash", async () => {
     const { client, engines } = harness();
     const result = client.compile({ revision: 1, entryPath: "bad.typ" });
