@@ -27,10 +27,12 @@ export function collectDirtyBuffers(
         `Dirty Typst buffer ${buffer.path} exceeded the 50 MiB file limit.`
       );
     }
-    totalBytes += bytes.byteLength;
-    if (totalBytes > MAX_VAULT_INPUT_BYTES) {
+    const previousBytes = overlay.get(compilerPath)?.byteLength ?? 0;
+    const nextTotalBytes = totalBytes - previousBytes + bytes.byteLength;
+    if (nextTotalBytes > MAX_VAULT_INPUT_BYTES) {
       throw new Error("Dirty Typst buffers exceeded the 70 MiB aggregate limit.");
     }
+    totalBytes = nextTotalBytes;
     overlay.set(compilerPath, bytes);
   }
   return overlay;

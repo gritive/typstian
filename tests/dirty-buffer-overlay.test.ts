@@ -49,6 +49,20 @@ describe("collectDirtyBuffers", () => {
     ])).toThrow("Dirty Typst buffer main.typ exceeded the 50 MiB file limit.");
   });
 
+  it("charges only the last dirty buffer for a compiler path", () => {
+    const first = "a".repeat(40 * 1024 * 1024);
+    const second = "b".repeat(40 * 1024 * 1024);
+
+    const overlay = collectDirtyBuffers(vault, vault, [
+      { path: "main.typ", text: first },
+      { path: "main.typ", text: second },
+    ]);
+
+    expect(overlay.size).toBe(1);
+    expect(overlay.get("main.typ")).toHaveLength(40 * 1024 * 1024);
+    expect(overlay.get("main.typ")?.[0]).toBe("b".charCodeAt(0));
+  });
+
   it("rejects dirty buffers over the aggregate vault input limit", () => {
     const first = "a".repeat(40 * 1024 * 1024);
     const second = "b".repeat(30 * 1024 * 1024 + 1);
