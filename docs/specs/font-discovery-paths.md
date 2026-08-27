@@ -34,7 +34,9 @@ and the environment.
 - **AC2** On Linux, directories named by `<dir>` elements in the fontconfig
   configuration are in the returned list, with `~` expanded to the home
   directory and a relative `prefix="xdg"` resolved against `$XDG_DATA_HOME`.
-- **AC3** fontconfig configuration is read from `$FONTCONFIG_FILE` when set,
+- **AC3** fontconfig configuration is read from `$FONTCONFIG_FILE` when set —
+  expanded like any other configuration path, `~` for this user's home and a
+  relative name against the configuration root, as `FcConfigGetFilename` does —
   otherwise from `$FONTCONFIG_PATH` — a colon-separated *search path*, each entry
   a configuration root, defaulting to `/etc/fonts` — reading `fonts.conf` plus
   every `conf.d/*.conf` fragment in each, and from
