@@ -1,6 +1,10 @@
 // @vitest-environment happy-dom
 
-import { TFile, TFolder, View, type Command, type WorkspaceLeaf } from "obsidian";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
+import { Notice, TFile, TFolder, View, type Command, type WorkspaceLeaf } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
 import type { DependencyIndex } from "../src/dependency-index";
@@ -285,6 +289,7 @@ function harness(leaves: DeferredLeaf[]) {
       refresh(): void;
     }>;
     publishDiagnostics(result: unknown): void;
+    settings: { rootPath: string };
     vaultRoot(): string;
     compilationRoot(vaultRoot: string): string;
     revealSourceLocation(
@@ -487,19 +492,56 @@ describe("TypstianPlugin Typst file creation", () => {
     const target = deferredLeaf();
     target.finish();
     const { commands, internals, plugin, vault } = harness([target.leaf]);
-    vault.getAbstractFileByPath.mockReturnValue(null);
-    // `rootPath` is free text, and every other consumer routes it through the
-    // policy that refuses a root outside the vault.
-    vi.spyOn(internals, "compilationRoot").mockImplementation(() => {
-      throw new Error("Compilation root must resolve inside the vault.");
-    });
-    await plugin.onload();
+    const vaultRoot = fs.mkdtempSync(path.join(os.tmpdir(), "typstian-vault-"));
+    try {
+      vault.getAbstractFileByPath.mockReturnValue(null);
+      // `rootPath` is free text; the real policy has to run for this to mean
+      // anything, so the harness's stubbed root is restored here.
+      vi.spyOn(internals, "vaultRoot").mockReturnValue(fs.realpathSync(vaultRoot));
+      (internals.compilationRoot as unknown as { mockRestore(): void }).mockRestore();
+      const notices = (Notice as unknown as { messages: string[] }).messages;
+      notices.length = 0;
+      await plugin.onload();
+      internals.settings.rootPath = "../outside-the-vault";
 
-    commands.get("create-typst-file")?.callback?.();
-    await vi.waitFor(() => {
+      commands.get("create-typst-file")?.callback?.();
+
+      expect(notices).toContain("The configured compilation root is outside this vault.");
       expect(vault.create).not.toHaveBeenCalled();
-    });
+      plugin.onunload();
+    } finally {
+      fs.rmSync(vaultRoot, { recursive: true, force: true });
+    }
+  });
 
+  it("keeps the folder menu out of folders the compiler cannot reach", async () => {
+    const target = deferredLeaf();
+    target.finish();
+    const { internals, menuCallbacks, plugin } = harness([target.leaf]);
+    vi.spyOn(internals, "compilationRoot").mockReturnValue("/vault/book");
+    await plugin.onload();
+    const items: string[] = [];
+    const menu = {
+      addItem: (build: (item: {
+        setTitle(value: string): typeof item;
+        setIcon(value: string): typeof item;
+        onClick(handler: () => void): typeof item;
+      }) => void) => {
+        const item = {
+          setTitle(value: string) { items.push(value); return item; },
+          setIcon() { return item; },
+          onClick() { return item; },
+        };
+        build(item);
+      },
+    };
+    const folder = Object.assign(new TFolder(), { path: "notes" });
+
+    // A file outside the compilation root cannot be compiled at all, which is
+    // the failure this command exists to prevent.
+    for (const callback of menuCallbacks) callback(menu, folder);
+
+    expect(items).not.toContain("New Typst file");
     plugin.onunload();
   });
 

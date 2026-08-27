@@ -1,5 +1,6 @@
-// Vault paths are always `/`-separated, so this module stays off `node:path`:
-// its Windows separator would leak into the vault API.
+// Off `node:path`, for the reason `src/pdf-export.ts` states: a vault path is
+// always `/`-separated, and `path.sep` would leak a backslash into the vault API
+// on Windows.
 
 const BASE_NAME = "Untitled";
 const MAX_CANDIDATES = 100;
@@ -31,4 +32,14 @@ export function resolveNewTypstFile(
     if (!exists(candidate)) return { path: candidate, content: `= ${name}\n` };
   }
   return null;
+}
+
+/**
+ * Whether a vault folder sits at or below another. Vault paths are always
+ * `/`-separated and already normalized by Obsidian, so this is a prefix test,
+ * not path arithmetic.
+ */
+export function isWithinVaultFolder(root: string, folderPath: string): boolean {
+  if (root === "") return true;
+  return folderPath === root || folderPath.startsWith(`${root}/`);
 }

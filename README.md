@@ -36,7 +36,8 @@ install it, and enable it. Do not enable another plugin that registers the
    It is named `Untitled.typ`, or the next free name, and opens in the Typst
    source view. An existing `.typ` file opens by clicking it as usual.
 2. Edit it in the Typst source view.
-3. Run **Typstian: Open Typst preview** from the command palette.
+3. Run **Typstian: Open Typst preview** from the command palette. It is listed
+   only while a Typst file is the active editor, so open one first.
 4. Use the preview toolbar to zoom or fit pages to the available width.
 5. Click rendered preview text to jump to the exact Typst source byte offset.
    Dragging still selects text for copying; links and controls keep their normal behavior.
@@ -138,10 +139,11 @@ directory on each device works normally.
 
 ## Current scope
 
-Typstian does not provide mobile support,
-completion, hover, rename, go-to-definition, formatting, semantic tokens, PDF
-export, rotated-page inverse search, glyph-exact forward round-tripping, or
-Tinymist's custom preview protocol. Syntax highlighting comes from
+Typstian does not provide mobile support, hover, rename, go-to-definition,
+formatting, semantic tokens, rotated-page inverse search, glyph-exact forward
+round-tripping, or Tinymist's custom preview protocol. Completion and PDF export
+are new and narrow: completions come from the last compiled snapshot, and the
+export writes one PDF beside the source on request. Syntax highlighting comes from
 the experimental `codemirror-lang-typst` 0.6.0 Lezer grammar for Typst 0.15.
 
 ## Contributing

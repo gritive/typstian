@@ -48,8 +48,10 @@ export class FileSystemAdapter {
 }
 
 export class Notice {
-  constructor(_message: string) {
-    void _message;
+  static readonly messages: string[] = [];
+
+  constructor(message: string) {
+    Notice.messages.push(message);
   }
 }
 

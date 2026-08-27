@@ -42,7 +42,7 @@ import {
   resolveDiagnosticVaultPath,
   resolveCompilerEntryPath
 } from "./path-policy";
-import { resolveNewTypstFile } from "./new-typst-file";
+import { isWithinVaultFolder, resolveNewTypstFile } from "./new-typst-file";
 import { resolvePdfExportPath } from "./pdf-export";
 import {
   chooseForwardPreview,
@@ -159,6 +159,10 @@ export default class TypstianPlugin extends Plugin {
     // in a folder, and the command palette cannot express "in this folder".
     this.registerEvent(this.app.workspace.on("file-menu", (menu, file) => {
       if (!(file instanceof TFolder)) return;
+      // Offering it outside the compilation root would hand the user a file
+      // nothing can compile — the failure this command exists to undo.
+      const root = this.compilationRootFolder();
+      if (root === null || !isWithinVaultFolder(root, file.path)) return;
       menu.addItem((item) => item
         .setTitle("New Typst file")
         .setIcon("file-plus")
@@ -412,8 +416,9 @@ export default class TypstianPlugin extends Plugin {
       const leaf = this.app.workspace.getLeaf("tab");
       await leaf.openFile(file);
       await this.app.workspace.revealLeaf(leaf);
-    } catch {
-      new Notice(`Unable to create ${target.path}`);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      new Notice(`Unable to create ${target.path}: ${reason}`);
     }
   }
 
@@ -837,10 +842,12 @@ private handleVaultPath(vaultPath: string, includeDirectEntry = true): void {
    * API only through the same policy every compile already applies to it.
    */
   private compilationRootFolder(): string | null {
+    const vaultRoot = this.vaultRoot();
     try {
-      const vaultRoot = this.vaultRoot();
       return path.relative(vaultRoot, this.compilationRoot(vaultRoot)).split(path.sep).join("/");
     } catch {
+      // Only the root policy is swallowed here; a vault that is not on a local
+      // filesystem is a different failure, and every other command lets it out.
       return null;
     }
   }
