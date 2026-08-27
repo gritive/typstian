@@ -8,6 +8,7 @@ import {
   MAX_FONTCONFIG_FRAGMENTS,
   MAX_FONTCONFIG_INCLUDE_DEPTH,
   MAX_SYSTEM_FONT_BYTES,
+  MAX_SYSTEM_FONT_FILES,
   registerSystemFonts,
   systemFontDirectories,
 } from "../src/system-fonts";
@@ -735,6 +736,34 @@ describe("system font loading", () => {
       );
     } finally {
       fs.rmSync(temporary, { recursive: true, force: true });
+    }
+  });
+
+
+  it("bounds a scan-wide number of visited directories", async () => {
+    let canonicalIndex = 0;
+    const realpath = vi.spyOn(fs.promises, "realpath").mockImplementation(async () => {
+      const canonical = `/virtual/${canonicalIndex}`;
+      canonicalIndex += 1;
+      return canonical;
+    });
+    const readdir = vi.spyOn(fs.promises, "readdir").mockImplementation(async () => {
+      if (canonicalIndex > MAX_SYSTEM_FONT_FILES) return [];
+      return [{
+        name: "next",
+        isDirectory: () => true,
+        isFile: () => false,
+        isSymbolicLink: () => false,
+      }] as fs.Dirent[];
+    });
+
+    try {
+      await registerSystemFonts(["/virtual/root"], vi.fn());
+
+      expect(readdir).toHaveBeenCalledTimes(MAX_SYSTEM_FONT_FILES);
+    } finally {
+      realpath.mockRestore();
+      readdir.mockRestore();
     }
   });
 

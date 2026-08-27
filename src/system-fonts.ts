@@ -39,7 +39,11 @@ async function discoverFontFiles(
   const visitedDirectories = new Set<string>();
   const fonts = new Map<string, number>();
 
-  while (pending.length > 0 && fonts.size < MAX_SYSTEM_FONT_FILES) {
+  while (
+    pending.length > 0 &&
+    fonts.size < MAX_SYSTEM_FONT_FILES &&
+    visitedDirectories.size < MAX_SYSTEM_FONT_FILES
+  ) {
     const next = pending.shift();
     if (!next) break;
     try {
