@@ -58,6 +58,7 @@ export interface TypstEditorViewOptions {
     request: TypstCompletionRequest,
   ) => Promise<TypstCompletionResponse | null>;
   onClose?: () => void;
+  onOpenPreview?: (sourcePath: string) => void;
 }
 
 /**
@@ -161,6 +162,15 @@ export class TypstEditorView extends TextFileView {
     this.onForwardSearch = options.onForwardSearch ?? (() => undefined);
     this.onComplete = options.onComplete ?? (() => Promise.resolve(null));
     this.onClosed = options.onClose ?? (() => undefined);
+    const onOpenPreview = options.onOpenPreview ?? ((): void => undefined);
+    // Registered with the view, not derived from the active view, so a Typst
+    // editor in a background split offers it too.
+    this.addAction("file-text", "Open Typst preview", () => {
+      const file = this.file;
+      // A leaf that has not opened a file yet has nothing to preview.
+      if (file === null) return;
+      onOpenPreview(file.path);
+    });
     this.contentEl.classList.add("typstian-editor");
     this.editorView = new EditorView({
       parent: this.contentEl,

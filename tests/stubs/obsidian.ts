@@ -8,7 +8,16 @@ export class TextFileView {
     this.contentEl = document.createElement("div");
   }
 
+  // Obsidian's view header actions; the stub records them so a test can
+  // activate one the way a click would.
+  readonly actions: Array<{ icon: string; title: string; callback: () => void }> = [];
+
   requestSave(): void {}
+
+  addAction(icon: string, title: string, callback: () => void): HTMLElement {
+    this.actions.push({ icon, title, callback });
+    return document.createElement("div");
+  }
 }
 
 export class View {

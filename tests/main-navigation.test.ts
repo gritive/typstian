@@ -291,6 +291,7 @@ function harness(leaves: DeferredLeaf[]) {
     }>;
     publishDiagnostics(result: unknown): void;
     openPreview(sourcePath: string): Promise<void>;
+    createEditorView(leaf: WorkspaceLeaf): TypstEditorView;
     savePdf(sourcePath: string): Promise<void>;
     settings: { rootPath: string };
     vaultRoot(): string;
@@ -451,6 +452,12 @@ describe("TypstianPlugin source navigation", () => {
     expect(sourceLeaf.reveals[0]).not.toHaveBeenCalled();
   });
 });
+
+function editorActions(view: TypstEditorView) {
+  return (view as unknown as {
+    actions: Array<{ icon: string; title: string; callback: () => void }>;
+  }).actions;
+}
 
 function menuItems(callback: (menu: unknown, file: unknown) => void, file: unknown) {
   const items: Array<{ title: string; click: () => void }> = [];
@@ -645,6 +652,25 @@ describe("TypstianPlugin preview entry points", () => {
 
     expect(items.map((item) => item.title)).toEqual(["Open Typst preview"]);
     items[0]!.click();
+    expect(openPreview).toHaveBeenCalledWith("book/main.typ");
+    plugin.onunload();
+  });
+
+  it("routes the editor's own preview action through the preview opener", async () => {
+    const { internals, plugin } = harness([]);
+    const openPreview = vi.spyOn(internals, "openPreview").mockResolvedValue();
+    await plugin.onload();
+    const view = internals.createEditorView({} as never);
+    const action = editorActions(view).find((entry) => entry.title === "Open Typst preview");
+
+    // No file yet: the leaf has nothing to preview.
+    action?.callback();
+    expect(action).toBeDefined();
+    expect(openPreview).not.toHaveBeenCalled();
+
+    view.file = fileAt("book/main.typ");
+    action?.callback();
+
     expect(openPreview).toHaveBeenCalledWith("book/main.typ");
     plugin.onunload();
   });

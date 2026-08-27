@@ -270,7 +270,8 @@ export default class TypstianPlugin extends Plugin {
       ),
       onClose: () => {
         this.forwardSearchScheduler.cancel(view);
-      }
+      },
+      onOpenPreview: (sourcePath) => { void this.openPreview(sourcePath); }
     });
     return view;
   }

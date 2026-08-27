@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import type { WorkspaceLeaf } from "obsidian";
+import type { TFile, WorkspaceLeaf } from "obsidian";
 import {
   acceptCompletion,
   currentCompletions,
@@ -16,9 +16,18 @@ vi.mock("obsidian", () => ({
   TextFileView: class {
     contentEl = document.createElement("div");
     data = "";
+    file: unknown = null;
     requestSave = vi.fn();
+    // Obsidian's view header actions; the stub records them so a test can
+    // activate one the way a click would.
+    actions: Array<{ icon: string; title: string; callback: () => void }> = [];
 
     constructor() {}
+
+    addAction(icon: string, title: string, callback: () => void): HTMLElement {
+      this.actions.push({ icon, title, callback });
+      return document.createElement("div");
+    }
   },
 }));
 
@@ -31,6 +40,12 @@ function createView(onDirty = vi.fn(), onForwardSearch = vi.fn()) {
   const view = new TypstEditorView(leaf, { onDirty, onForwardSearch });
   document.body.appendChild(view.contentEl);
   return { view, modify, onDirty, onForwardSearch };
+}
+
+function viewActions(view: TypstEditorView) {
+  return (view as unknown as {
+    actions: Array<{ icon: string; title: string; callback: () => void }>;
+  }).actions;
 }
 
 function collectDiagnostics(view: TypstEditorView) {
@@ -395,6 +410,19 @@ describe("TypstEditorView", () => {
     await view.onClose();
 
     expect(destroy).toHaveBeenCalledOnce();
+  });
+
+  it("offers a preview action that names the file the leaf is showing", () => {
+    const onOpenPreview = vi.fn();
+    const leaf = { app: { vault: { modify: vi.fn() } } } as unknown as WorkspaceLeaf;
+    const view = new TypstEditorView(leaf, { onOpenPreview });
+    view.file = { path: "book/main.typ" } as unknown as TFile;
+
+    const action = viewActions(view).find((entry) => entry.title === "Open Typst preview");
+    action?.callback();
+
+    expect(action).toBeDefined();
+    expect(onOpenPreview).toHaveBeenCalledWith("book/main.typ");
   });
 
   it("invalidates its forward-search owner when closed", async () => {
