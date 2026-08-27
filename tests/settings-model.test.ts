@@ -138,6 +138,15 @@ describe("TypstianSettingsTab", () => {
       expect(desc.textContent).toContain("Ready: this folder is inside the vault.");
     });
 
+    it("announces compilation root validation updates", () => {
+      const { tab } = tabFor(vaultDir());
+
+      const description = descriptionOf(tab);
+      const status = description.querySelector(".typstian-setting-status");
+
+      expect(status?.getAttribute("role")).toBe("status");
+    });
+
     it("reports a root that names no folder yet, and still saves it", async () => {
       vi.useFakeTimers();
       const { host, tab } = tabFor(vaultDir());

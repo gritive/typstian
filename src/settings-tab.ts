@@ -40,6 +40,7 @@ export class TypstianSettingsTab extends PluginSettingTab {
     const desc = createFragment();
     desc.createSpan().textContent = ROOT_PATH_DESC;
     this.statusEl = desc.createDiv();
+    this.statusEl.setAttribute("role", "status");
     this.showStatus(this.host.settings.rootPath);
     return [
       {
