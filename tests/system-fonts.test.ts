@@ -55,10 +55,17 @@ function withFontconfig<T>(
 // The default configuration roots are absolute paths a test cannot create, so
 // pinning them means serving a virtual filesystem to discovery and observing
 // which paths it asks for. Anything not in `files` reads as absent.
-function withVirtualFontconfig<T>(files: Record<string, string>, run: () => T): T {
+function withVirtualFontconfig<T>(
+  files: Record<string, string>,
+  run: (reads: string[]) => T,
+): T {
+  // The read log is how a test can tell "terminated" from "terminated because
+  // each file was read once": a swallowed stack overflow also terminates.
+  const reads: string[] = [];
   const readFile = vi.spyOn(fs, "readFileSync").mockImplementation(((file: string) => {
     const contents = files[file];
     if (contents === undefined) throw new Error(`ENOENT: ${file}`);
+    reads.push(file);
     return contents;
   }) as unknown as typeof fs.readFileSync);
   const stat = vi.spyOn(fs, "statSync").mockImplementation(((file: string) => {
@@ -70,7 +77,7 @@ function withVirtualFontconfig<T>(files: Record<string, string>, run: () => T): 
     throw new Error("ENOENT");
   });
   try {
-    return run();
+    return run(reads);
   } finally {
     readFile.mockRestore();
     stat.mockRestore();
@@ -313,6 +320,58 @@ describe("system font directories", () => {
     });
 
     expect(directories).toContain("/opt/included-fonts");
+  });
+
+  it("reads each file once on an include cycle", () => {
+    const first = "/opt/conf/first.conf";
+    const second = "/opt/conf/second.conf";
+    // Each file includes the other, a shape real dotfile setups reach by
+    // accident. Asserting the read counts, not just that the call returned:
+    // unbounded recursion also "returns", by overflowing into the catch.
+    const { directories, reads } = withFontconfig({}, () =>
+      withVirtualFontconfig(
+        {
+          [first]: `<fontconfig><dir>/opt/cycle-first</dir><include>${second}</include></fontconfig>`,
+          [second]: `<fontconfig><dir>/opt/cycle-second</dir><include>${first}</include></fontconfig>`,
+        },
+        (reads) => {
+          vi.stubEnv("FONTCONFIG_FILE", first);
+          return { directories: withPlatform("linux", () => systemFontDirectories()), reads };
+        },
+      ),
+    );
+
+    expect(directories).toContain("/opt/cycle-first");
+    expect(directories).toContain("/opt/cycle-second");
+    expect(reads.filter((file) => file === first)).toHaveLength(1);
+    expect(reads.filter((file) => file === second)).toHaveLength(1);
+  });
+
+  it("follows an ignore_missing include, a ~ include, and a directory include", () => {
+    const directories = withFontconfig({}, (root) => {
+      const includedDirectory = path.join(root, "conf-parts");
+      fs.mkdirSync(includedDirectory, { recursive: true });
+      fs.writeFileSync(
+        path.join(includedDirectory, "10-part.conf"),
+        "<fontconfig><dir>/opt/directory-included</dir></fontconfig>",
+      );
+      const configuration = path.join(root, "fonts.conf");
+      fs.writeFileSync(
+        configuration,
+        `<fontconfig>
+  <include ignore_missing="yes">${path.join(root, "absent.conf")}</include>
+  <include ignore_missing="yes">${includedDirectory}</include>
+  <include>~/.fonts.conf.d/nothing.conf</include>
+  <dir>/opt/still-read</dir>
+</fontconfig>`,
+      );
+      vi.stubEnv("FONTCONFIG_FILE", configuration);
+      return withPlatform("linux", () => systemFontDirectories());
+    });
+
+    expect(directories).toContain("/opt/directory-included");
+    // A missing include, expanded or not, must not cost the rest of the file.
+    expect(directories).toContain("/opt/still-read");
   });
 
   it("ignores a fontconfig file past the byte bound", () => {
