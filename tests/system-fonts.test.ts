@@ -6,7 +6,31 @@ import { describe, expect, it, vi } from "vitest";
 import {
   MAX_SYSTEM_FONT_BYTES,
   registerSystemFonts,
+  systemFontDirectories,
 } from "../src/system-fonts";
+
+// `systemFontDirectories` is a pure function of the platform and the
+// environment, so a test drives it by replacing both. `process.platform` is a
+// non-writable property, hence the descriptor dance rather than an assignment.
+function withPlatform<T>(platform: NodeJS.Platform, run: () => T): T {
+  const original = Object.getOwnPropertyDescriptor(process, "platform");
+  Object.defineProperty(process, "platform", { value: platform, configurable: true });
+  try {
+    return run();
+  } finally {
+    if (original) Object.defineProperty(process, "platform", original);
+  }
+}
+
+describe("system font directories", () => {
+  it("includes the mount points a sandboxed Obsidian sees host fonts at", () => {
+    const directories = withPlatform("linux", () => systemFontDirectories());
+
+    expect(directories).toEqual(
+      expect.arrayContaining(["/run/host/fonts", "/run/host/local-fonts", "/run/host/user-fonts"]),
+    );
+  });
+});
 
 describe("system font loading", () => {
   it("registers a font the residency plan cannot fit, without retaining it", async () => {
