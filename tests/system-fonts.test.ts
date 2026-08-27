@@ -115,6 +115,35 @@ describe("system font directories", () => {
     expect(directories).toContain("/opt/fragment-fonts");
     expect(directories).not.toContain("/opt/ignored");
   });
+
+  it("ranks the user's fontconfig directories after the user's font directories and before the system's", () => {
+    const directories = withFontconfig(
+      { XDG_DATA_HOME: "/data/home" },
+      (root) => {
+        const userConfig = path.join(root, "config");
+        fs.mkdirSync(path.join(userConfig, "fontconfig", "conf.d"), { recursive: true });
+        fs.writeFileSync(
+          path.join(userConfig, "fontconfig", "fonts.conf"),
+          "<fontconfig><dir>/opt/user-fonts</dir></fontconfig>",
+        );
+        fs.writeFileSync(
+          path.join(userConfig, "fontconfig", "conf.d", "50-mine.conf"),
+          "<fontconfig><dir>/opt/user-fragment-fonts</dir></fontconfig>",
+        );
+        vi.stubEnv("XDG_CONFIG_HOME", userConfig);
+        return withPlatform("linux", () => systemFontDirectories());
+      },
+    );
+
+    expect(directories).toContain("/opt/user-fonts");
+    expect(directories).toContain("/opt/user-fragment-fonts");
+    expect(directories.indexOf("/opt/user-fonts")).toBeGreaterThan(
+      directories.indexOf("/data/home/fonts"),
+    );
+    expect(directories.indexOf("/opt/user-fragment-fonts")).toBeLessThan(
+      directories.indexOf("/usr/share/fonts"),
+    );
+  });
 });
 
 describe("system font loading", () => {

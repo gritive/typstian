@@ -270,9 +270,15 @@ export function systemFontDirectories(): string[] {
   const systemFontconfig = fontconfigFile
     ? readFontconfigFile(fontconfigFile, roots)
     : readFontconfigRoot(process.env.FONTCONFIG_PATH ?? "/etc/fonts", roots);
+  const configHome = process.env.XDG_CONFIG_HOME ?? path.join(home, ".config");
+  const userFontconfig = readFontconfigRoot(path.join(configHome, "fontconfig"), roots);
   return [
     path.join(home, ".fonts"),
     path.join(dataHome, "fonts"),
+    // The user's own configuration outranks the system's, because
+    // `planFontResidency` ranks by discovery root and the user's fonts are the
+    // ones a document is most likely to ask for.
+    ...userFontconfig,
     ...systemFontconfig,
     ...dataDirectories.map((directory) => path.join(directory, "fonts")),
     // A sandboxed Obsidian (Flatpak, Snap) sees the host's fonts bound at these
