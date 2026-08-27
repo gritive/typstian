@@ -164,6 +164,27 @@ describe("system font directories", () => {
     expect(absent).toContain("/usr/share/fonts");
     expect(absent).toContain(path.join(os.homedir(), ".fonts"));
   });
+
+  it("returns absolute directories without duplicates", () => {
+    const directories = withFontconfig({}, (root) => {
+      const configuration = path.join(root, "fonts.conf");
+      fs.writeFileSync(
+        configuration,
+        `<fontconfig>
+  <dir>/usr/share/fonts</dir>
+  <dir>/opt/twice</dir>
+  <dir>/opt/twice</dir>
+  <dir>relative/fonts</dir>
+</fontconfig>`,
+      );
+      vi.stubEnv("FONTCONFIG_FILE", configuration);
+      return withPlatform("linux", () => systemFontDirectories());
+    });
+
+    expect(directories).toEqual([...new Set(directories)]);
+    expect(directories.every((directory) => path.isAbsolute(directory))).toBe(true);
+    expect(directories).toContain("/opt/twice");
+  });
 });
 
 describe("system font loading", () => {

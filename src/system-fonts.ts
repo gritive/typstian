@@ -272,7 +272,9 @@ export function systemFontDirectories(): string[] {
     : readFontconfigRoot(process.env.FONTCONFIG_PATH ?? "/etc/fonts", roots);
   const configHome = process.env.XDG_CONFIG_HOME ?? path.join(home, ".config");
   const userFontconfig = readFontconfigRoot(path.join(configHome, "fontconfig"), roots);
-  return [
+  // A fontconfig configuration routinely re-declares a standard path, and the
+  // first occurrence is the ranking that matters, so the Set keeps it.
+  return [...new Set([
     path.join(home, ".fonts"),
     path.join(dataHome, "fonts"),
     // The user's own configuration outranks the system's, because
@@ -287,5 +289,5 @@ export function systemFontDirectories(): string[] {
     "/run/host/fonts",
     "/run/host/local-fonts",
     "/run/host/user-fonts",
-  ];
+  ])];
 }
