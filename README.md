@@ -9,6 +9,12 @@ The Typst compiler ships inside the plugin as WebAssembly, so there is nothing
 to install alongside it — no Typst binary, no native helper, and no download at
 runtime.
 
+> **Alpha.** Typstian is early software under active development. It compiles
+> and previews real documents, but settings, commands, and behaviour can still
+> change between releases, and a large or font-heavy document can be slow on its
+> first compile. Keep a copy of anything you cannot afford to lose, and please
+> report what breaks.
+
 ## Requirements
 
 - Obsidian desktop 1.13.1 or newer
