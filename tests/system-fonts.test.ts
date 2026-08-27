@@ -185,6 +185,29 @@ describe("system font directories", () => {
     expect(directories.every((directory) => path.isAbsolute(directory))).toBe(true);
     expect(directories).toContain("/opt/twice");
   });
+
+  it("leaves macOS and Windows alone and never consults fontconfig there", () => {
+    const { darwin, win32 } = withFontconfig({ LOCALAPPDATA: "C:\\Users\\me\\AppData\\Local" }, (root) => {
+      const configuration = path.join(root, "fonts.conf");
+      fs.writeFileSync(configuration, "<fontconfig><dir>/opt/never-here</dir></fontconfig>");
+      vi.stubEnv("FONTCONFIG_FILE", configuration);
+      return {
+        darwin: withPlatform("darwin", () => systemFontDirectories()),
+        win32: withPlatform("win32", () => systemFontDirectories()),
+      };
+    });
+
+    expect(darwin).toEqual([
+      path.join(os.homedir(), "Library/Fonts"),
+      "/Library/Fonts",
+      "/Network/Library/Fonts",
+      "/System/Library/Fonts",
+    ]);
+    expect(win32).toEqual([
+      path.join("C:\\Users\\me\\AppData\\Local", "Microsoft/Windows/Fonts"),
+      path.join(process.env.WINDIR ?? "C:\\Windows", "Fonts"),
+    ]);
+  });
 });
 
 describe("system font loading", () => {
