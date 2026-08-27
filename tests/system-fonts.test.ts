@@ -93,6 +93,28 @@ describe("system font directories", () => {
     expect(directories).toContain(path.join(os.homedir(), "my-fonts"));
     expect(directories).toContain("/data/home/fonts");
   });
+
+  it("reads fonts.conf and every conf.d fragment from the fontconfig path", () => {
+    const directories = withFontconfig({}, (root) => {
+      const fontconfigPath = path.join(root, "fonts");
+      fs.mkdirSync(path.join(fontconfigPath, "conf.d"), { recursive: true });
+      fs.writeFileSync(
+        path.join(fontconfigPath, "fonts.conf"),
+        "<fontconfig><dir>/opt/system-fonts</dir></fontconfig>",
+      );
+      fs.writeFileSync(
+        path.join(fontconfigPath, "conf.d", "10-extra.conf"),
+        "<fontconfig><dir>/opt/fragment-fonts</dir></fontconfig>",
+      );
+      fs.writeFileSync(path.join(fontconfigPath, "conf.d", "notes.txt"), "<dir>/opt/ignored</dir>");
+      vi.stubEnv("FONTCONFIG_PATH", fontconfigPath);
+      return withPlatform("linux", () => systemFontDirectories());
+    });
+
+    expect(directories).toContain("/opt/system-fonts");
+    expect(directories).toContain("/opt/fragment-fonts");
+    expect(directories).not.toContain("/opt/ignored");
+  });
 });
 
 describe("system font loading", () => {

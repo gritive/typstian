@@ -211,6 +211,25 @@ function parseFontconfigDirectories(xml: string, roots: FontconfigRoots): string
   return directories;
 }
 
+// One configuration root contributes its own fonts.conf plus every fragment in
+// its conf.d, which is where a distribution and a user alike drop declarations.
+function readFontconfigRoot(directory: string, roots: FontconfigRoots): string[] {
+  const confD = path.join(directory, "conf.d");
+  let fragments: string[] = [];
+  try {
+    fragments = fs
+      .readdirSync(confD)
+      .filter((entry) => entry.endsWith(".conf"))
+      .sort()
+      .map((entry) => path.join(confD, entry));
+  } catch {
+    fragments = [];
+  }
+  return [path.join(directory, "fonts.conf"), ...fragments].flatMap((file) =>
+    readFontconfigFile(file, roots),
+  );
+}
+
 function readFontconfigFile(file: string, roots: FontconfigRoots): string[] {
   try {
     return parseFontconfigDirectories(fs.readFileSync(file, "utf8"), roots);
@@ -244,11 +263,17 @@ export function systemFontDirectories(): string[] {
   const dataDirectories = (process.env.XDG_DATA_DIRS ?? "/usr/local/share:/usr/share")
     .split(path.delimiter)
     .filter(Boolean);
+  // FONTCONFIG_FILE names a whole configuration and replaces the system one;
+  // otherwise the system configuration lives under FONTCONFIG_PATH or /etc/fonts.
   const fontconfigFile = process.env.FONTCONFIG_FILE;
+  const roots = { home, dataHome };
+  const systemFontconfig = fontconfigFile
+    ? readFontconfigFile(fontconfigFile, roots)
+    : readFontconfigRoot(process.env.FONTCONFIG_PATH ?? "/etc/fonts", roots);
   return [
     path.join(home, ".fonts"),
     path.join(dataHome, "fonts"),
-    ...(fontconfigFile ? readFontconfigFile(fontconfigFile, { home, dataHome }) : []),
+    ...systemFontconfig,
     ...dataDirectories.map((directory) => path.join(directory, "fonts")),
     // A sandboxed Obsidian (Flatpak, Snap) sees the host's fonts bound at these
     // mount points; the sandbox's own /usr/share/fonts is the runtime's
