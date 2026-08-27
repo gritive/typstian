@@ -62,7 +62,9 @@ const sleep = new Map<number, (message: InputResponse) => void>();
 // transient, not a per-preview tax.
 const residentFonts = new Map<string, Uint8Array>();
 let residentFontBytes = 0;
-// False until the first compile of this session settles. While it is false the
+// False until the first compile of this session settles, and never reset: a
+// session is one worker, and a failed one is terminated rather than reused, so
+// there is no path back to unproven. While it is false the
 // residency is an unproven bet governed by `MAX_RESIDENT_FONT_BYTES` alone;
 // once true the surviving bytes are proven selections, and the host charges
 // them against the same per-compile budget as the bytes it ships itself.
@@ -282,34 +284,36 @@ async function compile(
   const readPackage = reader(currentPackagePaths, packageCache, missingPackages);
   const readFont = reader(currentFontPaths, fontCache, missingFonts);
 
-  // Seed the retained faces before the first pass runs: a font lookup that
-  // misses costs a whole document layout that Typst then has to redo.
-  for (const [fontPath, bytes] of residentFonts) fontCache.set(fontPath, bytes);
-
-  // A retained face is already in the cache, so re-warming it would make the
-  // host read the same file from disk a second time.
-  const staleFontPaths = Array.from(previousFontPaths)
-    .filter((fontPath) => !fontCache.has(fontPath));
-
-  if (
-    previousPaths.size > 0
-    || previousPackagePaths.size > 0
-    || staleFontPaths.length > 0
-  ) {
-    await requestInputs(
-      Array.from(previousPaths),
-      Array.from(previousPackagePaths),
-      staleFontPaths,
-      caches,
-    );
-  }
-
   // The retry loop below recompiles the same revision until every input is
   // present, so the instant is captured once: `datetime.today()` must not
   // shift mid-compile.
   const clock = hostClock();
 
+  // Everything from the seeding on runs inside the try: the pre-warm can throw
+  // too, and the cold-start set must not survive a compile that never settled.
   try {
+    // Seed the retained faces before the first pass runs: a font lookup that
+    // misses costs a whole document layout that Typst then has to redo.
+    for (const [fontPath, bytes] of residentFonts) fontCache.set(fontPath, bytes);
+
+    // A retained face is already in the cache, so re-warming it would make the
+    // host read the same file from disk a second time.
+    const staleFontPaths = Array.from(previousFontPaths)
+      .filter((fontPath) => !fontCache.has(fontPath));
+
+    if (
+      previousPaths.size > 0
+      || previousPackagePaths.size > 0
+      || staleFontPaths.length > 0
+    ) {
+      await requestInputs(
+        Array.from(previousPaths),
+        Array.from(previousPackagePaths),
+        staleFontPaths,
+        caches,
+      );
+    }
+
     while (true) {
       missing.clear();
       missingPackages.clear();

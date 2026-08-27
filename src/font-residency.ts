@@ -6,15 +6,14 @@
 // are present. Keeping the bytes the host already read lets the worker answer
 // that first request from memory and skips the wasted pass.
 //
-// `MAX_SYSTEM_FONT_SCAN_BYTES` bounds how much the host may *read*; it is not a
-// residency budget. This cap bounds what stays *in memory* inside an Obsidian
-// renderer that also hosts PDF.js, the WASM compiler, and the editor, so it is
-// deliberately an order of magnitude smaller than the scan budget.
+// `MAX_SYSTEM_FONT_SCAN_BYTES` bounds how much the host may *read*; the two
+// ceilings below bound what stays *in memory* inside an Obsidian renderer that
+// also hosts PDF.js, the WASM compiler, and the editor.
+
 // The cold-start ceiling: unproven candidate faces the worker holds between
-// registration and the moment the first compile settles. It is deliberately
-// wider than the steady-state ceiling below, because nothing yet knows which
-// faces the document needs, and it lasts only until the first compile answers
-// that question.
+// registration and the moment the first compile settles. It is wider than the
+// steady-state ceiling below because nothing yet knows which faces the document
+// needs, and it lasts only until the first compile answers that question.
 export const MAX_RESIDENT_FONT_BYTES = 256 * 1024 * 1024;
 
 // The steady-state ceiling, and the same number `src/wasm-engine.ts` charges
@@ -56,21 +55,37 @@ export function planFontResidency(
   candidates: readonly FontResidencyCandidate[],
   capBytes: number = MAX_RESIDENT_FONT_BYTES,
 ): Set<string> {
-  const ranked = candidates
-    .filter((candidate) => candidate.byteLength > 0)
+  return fillUnderCap(
+    candidates.filter((candidate) => candidate.byteLength > 0),
+    capBytes,
+    (left, right) => left.root - right.root || right.byteLength - left.byteLength,
+  );
+}
+
+/**
+ * Fills the cap greedily in ranked order, skipping — never stopping at — an
+ * entry that does not fit, so the cheap tail still uses the remaining budget.
+ * Path breaks every tie, so a plan is the same set on every run.
+ */
+function fillUnderCap<Entry extends { readonly path: string; readonly byteLength: number }>(
+  entries: readonly Entry[],
+  capBytes: number,
+  rank: (left: Entry, right: Entry) => number,
+): Set<string> {
+  const ranked = entries
+    .slice()
     .sort((left, right) =>
-      left.root - right.root
-      || right.byteLength - left.byteLength
+      rank(left, right)
       || (left.path < right.path ? -1 : left.path > right.path ? 1 : 0));
 
-  const resident = new Set<string>();
-  let residentBytes = 0;
-  for (const candidate of ranked) {
-    if (residentBytes + candidate.byteLength > capBytes) continue;
-    residentBytes += candidate.byteLength;
-    resident.add(candidate.path);
+  const kept = new Set<string>();
+  let keptBytes = 0;
+  for (const entry of ranked) {
+    if (keptBytes + entry.byteLength > capBytes) continue;
+    keptBytes += entry.byteLength;
+    kept.add(entry.path);
   }
-  return resident;
+  return kept;
 }
 
 /**
@@ -94,18 +109,9 @@ export function retainUsedFonts(
   used: ReadonlySet<string>,
   capBytes: number = MAX_SELECTED_FONT_BYTES,
 ): Set<string> {
-  const survivors = resident
-    .filter((entry) => entry.byteLength > 0 && used.has(entry.path))
-    .sort((left, right) =>
-      right.byteLength - left.byteLength
-      || (left.path < right.path ? -1 : left.path > right.path ? 1 : 0));
-
-  const kept = new Set<string>();
-  let keptBytes = 0;
-  for (const entry of survivors) {
-    if (keptBytes + entry.byteLength > capBytes) continue;
-    keptBytes += entry.byteLength;
-    kept.add(entry.path);
-  }
-  return kept;
+  return fillUnderCap(
+    resident.filter((entry) => entry.byteLength > 0 && used.has(entry.path)),
+    capBytes,
+    (left, right) => right.byteLength - left.byteLength,
+  );
 }

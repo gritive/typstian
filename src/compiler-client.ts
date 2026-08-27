@@ -193,7 +193,7 @@ export interface CompilerCompleteResult {
   completions: CompilerCompletion[];
 }
 
-type RequestKind = "environment" | "compile" | "jump" | "forward" | "complete";
+export type RequestKind = "environment" | "compile" | "jump" | "forward" | "complete";
 
 interface PendingRequest<T = unknown> {
   kind: RequestKind;

@@ -144,7 +144,8 @@ and embeds the result in `main.js`; Community releases contain only `main.js`,
   too, so the buffers never outlive the compile that would have proved them; a
   later cold session starts empty and gets the full cold-start set again. An
   evicted face that turns out to be needed later comes back through the ordinary
-  host request path — never a second disk read inside one session.
+  host request path, which reads it from disk again — the residency buys the
+  first compile, not every later one.
 - **The residency lives inside the 128 MiB selected-font budget.** Survivors are
   capped at `MAX_SELECTED_FONT_BYTES`, the same number `providePath` charges
   host-shipped font bytes against for one compile, and the worker declares its

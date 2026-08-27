@@ -1,3 +1,7 @@
+// Type-only, so it costs nothing at runtime and keeps the caller's request
+// union from widening to `string` at this seam.
+import type { RequestKind } from "./compiler-client";
+
 // Blowing a compile deadline is not a cheap retry: it calls `failSession`,
 // which disposes the engine, terminates the worker, and discards the retained
 // document and the registered fonts. The next attempt therefore starts cold and
@@ -12,7 +16,7 @@ export const COLD_COMPILE_DEADLINE_MULTIPLIER = 4;
  * widened; every other request, compile or not, keeps the steady-state budget.
  */
 export function requestDeadlineMs(
-  kind: string,
+  kind: RequestKind,
   timeoutMs: number,
   sessionCompileCount: number,
 ): number {

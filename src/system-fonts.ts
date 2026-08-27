@@ -134,12 +134,21 @@ export async function registerSystemFonts(
       // Unreadable and disappearing fonts are skipped.
     }
   }
-  const resident = planFontResidency(candidates);
+  // The plan may only rank what the read loop will reach: budgeting a file the
+  // scan stops short of would shrink the residency below its own cap.
+  const readable: FontResidencyCandidate[] = [];
+  let plannedBytes = 0;
+  for (const candidate of candidates) {
+    if (plannedBytes + candidate.byteLength > MAX_SYSTEM_FONT_SCAN_BYTES) break;
+    plannedBytes += candidate.byteLength;
+    readable.push(candidate);
+  }
+  const resident = planFontResidency(readable);
 
   const allowed = new Set<string>();
   let scannedBytes = 0;
 
-  for (const candidate of candidates) {
+  for (const candidate of readable) {
     throwIfAborted(signal);
     try {
       if (scannedBytes + candidate.byteLength > MAX_SYSTEM_FONT_SCAN_BYTES) break;

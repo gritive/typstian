@@ -104,6 +104,11 @@ describe("release contract", () => {
     expect(workflow).toContain(
       `cargo install wasm-bindgen-cli --version ${wasmBindgenVersion!} --locked`
     );
+    // The developer side has to be pinned to the same build, or a local
+    // reproduction of a release diverges again with no signal.
+    expect(fs.readFileSync(path.join(root, "CONTRIBUTING.md"), "utf8")).toContain(
+      `cargo install wasm-bindgen-cli --version ${wasmBindgenVersion!} --locked`
+    );
     expect(workflow).toContain("npm run build:wasm");
     expect(workflow).toContain("npm run licenses:check");
     expect(workflow).toContain("actions/checkout@");
