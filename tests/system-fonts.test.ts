@@ -74,9 +74,15 @@ function withVirtualFontconfig<T>(
     if (contents === undefined) throw new Error(`ENOENT: ${file}`);
     return { size: Buffer.byteLength(contents) };
   }) as unknown as typeof fs.statSync);
-  const readDir = vi.spyOn(fs, "readdirSync").mockImplementation(() => {
-    throw new Error("ENOENT");
-  });
+  // Directory listings come from the same map, so a virtual conf.d behaves
+  // like a real one; a directory with no files reads as absent.
+  const readDir = vi.spyOn(fs, "readdirSync").mockImplementation(((directory: string) => {
+    const entries = Object.keys(files)
+      .filter((file) => path.dirname(file) === directory)
+      .map((file) => path.basename(file));
+    if (entries.length === 0) throw new Error(`ENOENT: ${directory}`);
+    return entries;
+  }) as unknown as typeof fs.readdirSync);
   try {
     return run(reads);
   } finally {
@@ -433,6 +439,26 @@ describe("system font directories", () => {
 
     expect(directories).toContain("/opt/relative-included");
     expect(directories).toContain("/opt/relative-sibling");
+  });
+
+  it("reads a file shared by two fragments once across the whole scan", () => {
+    const shared = "/opt/conf/shared.conf";
+    const { reads } = withFontconfig({ FONTCONFIG_PATH: "/opt/conf" }, () =>
+      withVirtualFontconfig(
+        {
+          "/opt/conf/fonts.conf": `<fontconfig><include>${shared}</include></fontconfig>`,
+          "/opt/conf/conf.d/10-a.conf": `<fontconfig><include>${shared}</include></fontconfig>`,
+          "/opt/conf/conf.d/20-b.conf": `<fontconfig><include>${shared}</include></fontconfig>`,
+          [shared]: "<fontconfig><dir>/opt/shared-fonts</dir></fontconfig>",
+        },
+        (reads) => {
+          withPlatform("linux", () => systemFontDirectories());
+          return { reads };
+        },
+      ),
+    );
+
+    expect(reads.filter((file) => file === shared)).toHaveLength(1);
   });
 
   it("stops following a straight include chain at the depth bound", () => {
