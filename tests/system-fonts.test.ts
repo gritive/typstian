@@ -339,6 +339,31 @@ describe("system font directories", () => {
     expect(reads.filter((file) => file === second)).toHaveLength(1);
   });
 
+  it("resolves an xdg-prefixed include against the config home, not the data home", () => {
+    const directories = linuxDirectoriesFor((root) => {
+      // The same relative name exists under both bases, so only the base the
+      // reader picks decides which directory comes back.
+      const configHome = path.join(root, "config-home");
+      const dataHome = path.join(root, "data-home");
+      for (const [base, declared] of [
+        [configHome, "/opt/xdg-config-include"],
+        [dataHome, "/opt/xdg-data-include"],
+      ] as const) {
+        fs.mkdirSync(path.join(base, "extra"), { recursive: true });
+        fs.writeFileSync(
+          path.join(base, "extra", "included.conf"),
+          `<fontconfig><dir>${declared}</dir></fontconfig>`,
+        );
+      }
+      vi.stubEnv("XDG_CONFIG_HOME", configHome);
+      vi.stubEnv("XDG_DATA_HOME", dataHome);
+      return '<fontconfig><include prefix="xdg">extra/included.conf</include></fontconfig>';
+    });
+
+    expect(directories).toContain("/opt/xdg-config-include");
+    expect(directories).not.toContain("/opt/xdg-data-include");
+  });
+
   it("stops following a straight include chain at the depth bound", () => {
     // No cycle here, so the visited set never fires: only the depth bound can
     // stop this. The chain is one longer than the bound allows.
