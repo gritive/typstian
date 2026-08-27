@@ -1,6 +1,6 @@
 {
   "name": "typstian",
-  "version": "0.0.7",
+  "version": "0.0.8",
   "private": true,
   "license": "MIT",
   "description": "Edit Typst files and preview compiled documents in Obsidian.",
