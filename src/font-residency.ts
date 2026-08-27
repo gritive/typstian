@@ -100,9 +100,11 @@ function fillUnderCap<Entry extends { readonly path: string; readonly byteLength
  *
  * The survivors are bounded by `MAX_SELECTED_FONT_BYTES`, the same budget the
  * host charges the font bytes it ships for one compile, so the two cannot sum
- * past the ceiling either was written to hold. Ordering matches the cold-start
- * plan — largest first, skip what does not fit — because a broad-coverage face
- * is the expensive one to go without.
+ * past the ceiling either was written to hold. Ranking is size descending —
+ * the cold-start plan sorts by discovery root first, this one has no reason to,
+ * since every survivor is already proven — and it skips rather than stops at a
+ * face that does not fit, because a broad-coverage face is the expensive one to
+ * go without.
  */
 export function retainUsedFonts(
   resident: readonly FontResidencyEntry[],

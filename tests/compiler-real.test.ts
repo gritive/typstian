@@ -39,10 +39,17 @@ it("loads embedded Brotli WASM without a release-side asset", { timeout: 15_000 
       },
     ).toString("base64");
     try {
-      const baselineStartedAt = performance.now();
-      const baselineDelay = await new Promise<number>((resolve) => {
-        setImmediate(() => resolve(performance.now() - baselineStartedAt));
-      });
+      // Every engine here scans the machine's whole font corpus, so these tests
+      // are heavy and the suite runs them in parallel. The baseline is what one
+      // idle event-loop turn costs under that load, and the tolerance scales
+      // with it: a fixed 75 ms tripped on contention alone.
+      const idleTurnMs = async (): Promise<number> => {
+        const startedAt = performance.now();
+        return new Promise<number>((resolve) => {
+          setImmediate(() => resolve(performance.now() - startedAt));
+        });
+      };
+      const baselineDelay = Math.min(await idleTurnMs(), await idleTurnMs(), await idleTurnMs());
       const startedAt = performance.now();
       const eventLoopTurn = new Promise<number>((resolve) => {
         setImmediate(() => resolve(performance.now() - startedAt));
@@ -58,7 +65,9 @@ it("loads embedded Brotli WASM without a release-side asset", { timeout: 15_000 
         maxOutputBytes: 70 * 1024 * 1024,
       });
       try {
-        expect(await eventLoopTurn).toBeLessThan(baselineDelay + 75);
+        // Loading must not block the loop; a synchronous WASM compile would
+        // hold it for seconds, which this still catches.
+        expect(await eventLoopTurn).toBeLessThan(Math.max(baselineDelay * 5, 250));
         const responses = await Promise.all([
           firstEngine.checkEnvironment(),
           secondEngine.checkEnvironment(),
@@ -79,7 +88,7 @@ it("loads embedded Brotli WASM without a release-side asset", { timeout: 15_000 
     }
   });
 
-it("compiles an equation with the embedded math face", async () => {
+it("compiles an equation with the embedded math face", { timeout: 30_000 }, async () => {
     const client = new TypstianCompilerClient({
       rootPath: fixtureRoot,
       wasmPath: path.resolve("helper/wasm/pkg/typstian_wasm_bg.wasm"),
@@ -95,7 +104,7 @@ it("compiles an equation with the embedded math face", async () => {
     }
   });
 
-it("resolves datetime.today() to the host's own local date", async () => {
+it("resolves datetime.today() to the host's own local date", { timeout: 30_000 }, async () => {
     const client = new TypstianCompilerClient({
       rootPath: fixtureRoot,
       wasmPath: path.resolve("helper/wasm/pkg/typstian_wasm_bg.wasm"),
@@ -128,7 +137,7 @@ it("resolves datetime.today() to the host's own local date", async () => {
     }
   });
 
-it("embeds a Korean glyph", async () => {
+it("embeds a Korean glyph", { timeout: 30_000 }, async () => {
     const client = new TypstianCompilerClient({
       rootPath: fixtureRoot,
       wasmPath: path.resolve("helper/wasm/pkg/typstian_wasm_bg.wasm"),

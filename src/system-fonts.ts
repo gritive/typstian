@@ -151,7 +151,6 @@ export async function registerSystemFonts(
   for (const candidate of readable) {
     throwIfAborted(signal);
     try {
-      if (scannedBytes + candidate.byteLength > MAX_SYSTEM_FONT_SCAN_BYTES) break;
       const bytes = await fs.promises.readFile(candidate.path, { signal });
       throwIfAborted(signal);
       if (bytes.byteLength > MAX_SYSTEM_FONT_BYTES) continue;

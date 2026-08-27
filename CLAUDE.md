@@ -39,6 +39,9 @@ and embeds the result in `main.js`; Community releases contain only `main.js`,
   cancellation, and response validation; `wasm-engine.ts` initializes the
   bundled WASM module and owns per-preview browser workers; `wasm-worker.ts`
   owns compiler sessions and the asynchronous vault/font input protocol.
+  `font-residency.ts` and `compile-deadline.ts` hold the two policies those
+  three share — which font bytes a worker keeps, and how long a request may
+  take — as pure functions, so both are testable without Obsidian.
 - `helper/wasm/src/protocol.rs` holds the serde-only wire types the plugin and
   the compiler agree on. It was a separate `typstian-core` crate while a native
   helper existed; the bundled WASM compiler is the only consumer now, so it is a
@@ -140,9 +143,11 @@ and embeds the result in `main.js`; Community releases contain only `main.js`,
   `finally` — *after* it settles, because the first compile is the pass the
   residency exists for — and `retainUsedFonts` keeps only the faces that compile
   actually read, which the seeded cache records as `readFont` hits. The 126 KB
-  Korean book falls from 256 MiB peak to 43 MiB steady. A failed compile evicts
-  too, so the buffers never outlive the compile that would have proved them; a
-  later cold session starts empty and gets the full cold-start set again. An
+  Korean book falls from 256 MiB peak to 43 MiB steady. The steady set is still
+  per worker, so N previews cost N of those — bounded by the 128 MiB budget
+  below, not by one global ceiling. A failed compile narrows
+  too, so the cold-start set never outlives the compile that would have proved
+  it; a later cold session starts empty and gets the full set again. An
   evicted face that turns out to be needed later comes back through the ordinary
   host request path, which reads it from disk again — the residency buys the
   first compile, not every later one.
