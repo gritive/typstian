@@ -202,6 +202,20 @@ describe("system font directories", () => {
     expect(directories).toContain("/opt/home-config-fonts");
   });
 
+  it("reads the legacy ~/.fonts.conf", () => {
+    const directories = withFontconfig({}, () =>
+      withVirtualFontconfig(
+        {
+          [path.join(os.homedir(), ".fonts.conf")]:
+            "<fontconfig><dir>/opt/legacy-fonts</dir></fontconfig>",
+        },
+        () => withPlatform("linux", () => systemFontDirectories()),
+      ),
+    );
+
+    expect(directories).toContain("/opt/legacy-fonts");
+  });
+
   it("ranks the user's fontconfig directories after the user's font directories and before the system's", () => {
     const directories = withFontconfig(
       { XDG_DATA_HOME: "/data/home" },

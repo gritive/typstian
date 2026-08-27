@@ -290,7 +290,12 @@ export function systemFontDirectories(): string[] {
         .filter(Boolean)
         .flatMap((directory) => readFontconfigRoot(directory, roots));
   const configHome = process.env.XDG_CONFIG_HOME ?? path.join(home, ".config");
-  const userFontconfig = readFontconfigRoot(path.join(configHome, "fontconfig"), roots);
+  const userFontconfig = [
+    ...readFontconfigRoot(path.join(configHome, "fontconfig"), roots),
+    // fontconfig still honours this pre-XDG location, so a user whose <dir>
+    // lives there is visible to every other application but would not be here.
+    ...readFontconfigFile(path.join(home, ".fonts.conf"), roots),
+  ];
   // A fontconfig configuration routinely re-declares a standard path, and the
   // first occurrence is the ranking that matters, so the Set keeps it.
   return [...new Set([
