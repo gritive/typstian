@@ -179,6 +179,32 @@ export async function registerSystemFonts(
   return registeredFontReader(allowed);
 }
 
+// fontconfig's configuration is XML, but the only thing discovery needs from it
+// is the `<dir>` elements. A regex over the comment-stripped text avoids
+// pulling in a parser — and avoids depending on DOMParser, which exists in the
+// renderer but not in the worker or in tests.
+const FONTCONFIG_DIR_ELEMENT = /<dir\b([^>]*)>([^<]*)<\/dir>/g;
+const FONTCONFIG_COMMENT = /<!--[\s\S]*?-->/g;
+
+function parseFontconfigDirectories(xml: string): string[] {
+  const directories: string[] = [];
+  for (const match of xml.replace(FONTCONFIG_COMMENT, "").matchAll(FONTCONFIG_DIR_ELEMENT)) {
+    const directory = match[2].trim();
+    if (directory) directories.push(directory);
+  }
+  return directories;
+}
+
+function readFontconfigFile(file: string): string[] {
+  try {
+    return parseFontconfigDirectories(fs.readFileSync(file, "utf8"));
+  } catch {
+    // A missing, unreadable, or malformed configuration is not an error worth
+    // failing discovery over: the standard paths still stand on their own.
+    return [];
+  }
+}
+
 export function systemFontDirectories(): string[] {
   const home = os.homedir();
   if (process.platform === "darwin") {
@@ -202,9 +228,11 @@ export function systemFontDirectories(): string[] {
   const dataDirectories = (process.env.XDG_DATA_DIRS ?? "/usr/local/share:/usr/share")
     .split(path.delimiter)
     .filter(Boolean);
+  const fontconfigFile = process.env.FONTCONFIG_FILE;
   return [
     path.join(home, ".fonts"),
     path.join(dataHome, "fonts"),
+    ...(fontconfigFile ? readFontconfigFile(fontconfigFile) : []),
     ...dataDirectories.map((directory) => path.join(directory, "fonts")),
     // A sandboxed Obsidian (Flatpak, Snap) sees the host's fonts bound at these
     // mount points; the sandbox's own /usr/share/fonts is the runtime's

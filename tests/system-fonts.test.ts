@@ -22,6 +22,34 @@ function withPlatform<T>(platform: NodeJS.Platform, run: () => T): T {
   }
 }
 
+// Fontconfig discovery reads real files, so each test owns a temporary
+// configuration tree and points the environment at it. Every channel the
+// production code consults is stubbed, even the ones a test does not use, so a
+// developer's own /etc/fonts cannot leak into the result.
+function withFontconfig<T>(
+  environment: Record<string, string | undefined>,
+  run: (root: string) => T,
+): T {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "typstian-fontconfig-"));
+  const empty = path.join(root, "empty");
+  fs.mkdirSync(empty);
+  const resolved = {
+    FONTCONFIG_FILE: undefined,
+    FONTCONFIG_PATH: empty,
+    XDG_CONFIG_HOME: empty,
+    ...environment,
+  };
+  for (const [name, value] of Object.entries(resolved)) {
+    vi.stubEnv(name, value as string | undefined);
+  }
+  try {
+    return run(root);
+  } finally {
+    vi.unstubAllEnvs();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+}
+
 describe("system font directories", () => {
   it("includes the mount points a sandboxed Obsidian sees host fonts at", () => {
     const directories = withPlatform("linux", () => systemFontDirectories());
@@ -29,6 +57,23 @@ describe("system font directories", () => {
     expect(directories).toEqual(
       expect.arrayContaining(["/run/host/fonts", "/run/host/local-fonts", "/run/host/user-fonts"]),
     );
+  });
+
+  it("scans the directories the fontconfig file named by the environment declares", () => {
+    const directories = withFontconfig({}, (root) => {
+      const configuration = path.join(root, "fonts.conf");
+      fs.writeFileSync(
+        configuration,
+        `<?xml version="1.0"?>
+<fontconfig>
+  <dir>/opt/declared-fonts</dir>
+</fontconfig>`,
+      );
+      vi.stubEnv("FONTCONFIG_FILE", configuration);
+      return withPlatform("linux", () => systemFontDirectories());
+    });
+
+    expect(directories).toContain("/opt/declared-fonts");
   });
 });
 
