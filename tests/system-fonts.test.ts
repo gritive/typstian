@@ -178,16 +178,29 @@ describe("system font directories", () => {
           "<fontconfig><dir>/opt/user-fragment-fonts</dir></fontconfig>",
         );
         vi.stubEnv("XDG_CONFIG_HOME", userConfig);
+        // The system block must be non-empty too, or "user before system" is
+        // vacuous: an empty system block sits at no index at all.
+        const systemConfig = path.join(root, "etc-fonts");
+        fs.mkdirSync(systemConfig, { recursive: true });
+        fs.writeFileSync(
+          path.join(systemConfig, "fonts.conf"),
+          "<fontconfig><dir>/opt/system-ranked</dir></fontconfig>",
+        );
+        vi.stubEnv("FONTCONFIG_PATH", systemConfig);
         return withPlatform("linux", () => systemFontDirectories());
       },
     );
 
     expect(directories).toContain("/opt/user-fonts");
     expect(directories).toContain("/opt/user-fragment-fonts");
+    expect(directories).toContain("/opt/system-ranked");
     expect(directories.indexOf("/opt/user-fonts")).toBeGreaterThan(
       directories.indexOf("/data/home/fonts"),
     );
     expect(directories.indexOf("/opt/user-fragment-fonts")).toBeLessThan(
+      directories.indexOf("/opt/system-ranked"),
+    );
+    expect(directories.indexOf("/opt/system-ranked")).toBeLessThan(
       directories.indexOf("/usr/share/fonts"),
     );
   });
