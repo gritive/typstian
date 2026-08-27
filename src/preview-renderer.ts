@@ -154,8 +154,8 @@ export class PreviewRenderer {
       const element = container.createEl(located ? "button" : "p", {
         cls: "typst-preview-diagnostic",
       });
-      if (element instanceof HTMLButtonElement) {
-        element.type = "button";
+      if (located) {
+        element.setAttribute("type", "button");
         element.textContent =
           `${diagnostic.path}:${diagnostic.line}:${diagnostic.column} — ${diagnostic.message}`;
         element.setAttribute(

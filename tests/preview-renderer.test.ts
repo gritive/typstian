@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 
+import { Window } from "happy-dom";
 import { describe, expect, it, vi } from "vitest";
 
 import { PreviewRenderer, type PreviewRenderState } from "../src/preview-renderer";
@@ -91,6 +92,41 @@ describe("PreviewRenderer", () => {
     expect(button?.getAttribute("aria-label")).toContain("Go to notes/main.typ, line 7, column 3");
     button?.click();
     expect(onDiagnostic).toHaveBeenCalledWith(diagnostic);
+  });
+
+  it("navigates from a located diagnostic rendered in a popout window", async () => {
+    const popout = new Window();
+    const root = popout.document.createElement("section") as unknown as HTMLElement;
+    expect(root.win).not.toBe(window);
+
+    vi.stubGlobal("HTMLButtonElement", class MainWindowButton {});
+    const onDiagnostic = vi.fn();
+    const renderer = new PreviewRenderer(root, {
+      onDiagnostic,
+      pdfEngine: makePdfEngine().engine,
+    });
+    const diagnostic = {
+      path: "notes/main.typ",
+      line: 7,
+      column: 3,
+      severity: "error" as const,
+      message: "expected expression",
+    };
+
+    await renderer.render({
+      status: "error",
+      message: "Compilation failed",
+      diagnostics: [diagnostic],
+    });
+
+    const button = root.querySelector("button");
+    expect(button?.ownerDocument.defaultView).toBe(popout);
+    expect(button?.textContent).toContain("notes/main.typ:7:3");
+    button?.click();
+    expect(onDiagnostic).toHaveBeenCalledWith(diagnostic);
+
+    vi.unstubAllGlobals();
+    popout.close();
   });
 
   it("cleans the PDF runtime exactly once when disposed", async () => {
