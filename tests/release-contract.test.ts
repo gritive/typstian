@@ -146,9 +146,10 @@ describe("release contract", () => {
     ]) {
       expect(readme).not.toContain(developerOnly);
     }
-    // The PDF export is the plugin's only write into the user's vault, so the
-    // Community-directory description has to state where the file lands and
-    // that nothing is overwritten.
+    // The PDF export is one of the plugin's two writes into the user's vault
+    // (creating a Typst file is the other), so the Community-directory
+    // description has to state where the file lands and that nothing is
+    // overwritten.
     // AGENTS.md is CLAUDE.md for other tools. It has drifted twice by being
     // edited one file at a time, and nothing but this noticed.
     expect(fs.readFileSync(path.join(root, "AGENTS.md"), "utf8"))

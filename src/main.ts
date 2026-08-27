@@ -5,6 +5,7 @@ import {
   Notice,
   Plugin,
   TFile,
+  TFolder,
   View,
   type WorkspaceLeaf
 } from "obsidian";
@@ -41,6 +42,7 @@ import {
   resolveDiagnosticVaultPath,
   resolveCompilerEntryPath
 } from "./path-policy";
+import { resolveNewTypstFile } from "./new-typst-file";
 import { resolvePdfExportPath } from "./pdf-export";
 import {
   chooseForwardPreview,
@@ -104,6 +106,18 @@ export default class TypstianPlugin extends Plugin {
     this.registerView(TYPST_PREVIEW_VIEW_TYPE, (leaf) => this.createPreviewView(leaf));
 
     this.addCommand({
+      id: "create-typst-file",
+      name: "Create a Typst file",
+      callback: () => {
+        const folder = this.compilationRootFolder();
+        if (folder === null) {
+          new Notice("The configured compilation root is outside this vault.");
+          return;
+        }
+        void this.createTypstFile(folder);
+      }
+    });
+    this.addCommand({
       id: "open-typst-preview",
       name: "Open Typst preview",
       checkCallback: (checking) => {
@@ -140,6 +154,15 @@ export default class TypstianPlugin extends Plugin {
       if (leaf?.view instanceof TypstEditorView && leaf.view.file !== null) {
         this.followInAllPreviews(leaf.view.file.path);
       }
+    }));
+    // The file explorer's folder menu is where a user looks to create something
+    // in a folder, and the command palette cannot express "in this folder".
+    this.registerEvent(this.app.workspace.on("file-menu", (menu, file) => {
+      if (!(file instanceof TFolder)) return;
+      menu.addItem((item) => item
+        .setTitle("New Typst file")
+        .setIcon("file-plus")
+        .onClick(() => { void this.createTypstFile(file.path); }));
     }));
     this.registerEvent(this.app.vault.on("modify", (file) => {
       this.handleSavedFile(file);
@@ -370,6 +393,28 @@ export default class TypstianPlugin extends Plugin {
     const absoluteDependencies = result.dependencies.map((dependency) => path.resolve(root, dependency));
     if (result.ok) this.dependencies.update(sourcePath, absoluteDependencies);
     else this.dependencies.extend(sourcePath, absoluteDependencies);
+  }
+
+  // Obsidian's own "New note" only ever makes Markdown, and `registerExtensions`
+  // opens `.typ` files that already exist — so without this there is no way to
+  // reach the Typst editor, or the preview behind it, from inside the app.
+  private async createTypstFile(folderPath: string): Promise<void> {
+    const target = resolveNewTypstFile(
+      folderPath,
+      (candidate) => this.app.vault.getAbstractFileByPath(candidate) !== null
+    );
+    if (target === null) {
+      new Notice("Too many untitled Typst files sit in this folder; rename some and try again.");
+      return;
+    }
+    try {
+      const file = await this.app.vault.create(target.path, target.content);
+      const leaf = this.app.workspace.getLeaf("tab");
+      await leaf.openFile(file);
+      await this.app.workspace.revealLeaf(leaf);
+    } catch {
+      new Notice(`Unable to create ${target.path}`);
+    }
   }
 
   private async openPreview(sourcePath: string): Promise<void> {
@@ -784,5 +829,19 @@ private handleVaultPath(vaultPath: string, includeDirectEntry = true): void {
 
   private compilationRoot(vaultRoot: string): string {
     return resolveCompilationRoot(vaultRoot, this.settings.rootPath);
+  }
+
+  /**
+   * The compilation root as a vault-relative folder, or null when the setting
+   * points outside the vault. The setting is free text, so it reaches the vault
+   * API only through the same policy every compile already applies to it.
+   */
+  private compilationRootFolder(): string | null {
+    try {
+      const vaultRoot = this.vaultRoot();
+      return path.relative(vaultRoot, this.compilationRoot(vaultRoot)).split(path.sep).join("/");
+    } catch {
+      return null;
+    }
   }
 }

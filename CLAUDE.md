@@ -190,6 +190,15 @@ and embeds the result in `main.js`; Community releases contain only `main.js`,
   diagnostic naming it and saying nothing was downloaded — Typst reads a
   package's `typst.toml` first, which is how `helper/wasm/src/lib.rs` knows the
   directory is absent rather than one file inside it. Never add a download path.
+- **`registerExtensions` only opens a `.typ` file that already exists.** Obsidian's
+  own "New note" always makes Markdown, so a vault with no `.typ` file had no way
+  into the plugin at all — and `open-typst-preview` is a `checkCallback` gated on
+  an active Typst editor, which Obsidian hides when the check fails, so the
+  preview looked missing too (issue #1). The `create-typst-file` command and the
+  `file-menu` folder item are that entry point; `src/new-typst-file.ts` picks the
+  name. A new file starts with a heading, not empty, because an empty Typst
+  source compiles to a document with no pages and a blank preview reads as a
+  broken plugin.
 - **Renderer code must not touch main-window globals.** A preview can live in a
   popout window, so timers, `getComputedStyle`, `getSelection`, and
   `activeElement` go through the element's own `win`/`doc`, and elements are

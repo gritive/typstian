@@ -28,7 +28,13 @@ install it, and enable it. Do not enable another plugin that registers the
 
 ## Use
 
-1. Create or open a `.typ` file in the vault.
+1. Create a `.typ` file: run **Typstian: Create a Typst file** from the command
+   palette, or right-click a folder in the file explorer and choose **New Typst
+   file**. Obsidian's own **New note** always makes a Markdown file, so it cannot
+   start one. The palette command puts the file in the compilation root — the
+   vault root unless you changed it — and the folder menu puts it in that folder.
+   It is named `Untitled.typ`, or the next free name, and opens in the Typst
+   source view. An existing `.typ` file opens by clicking it as usual.
 2. Edit it in the Typst source view.
 3. Run **Typstian: Open Typst preview** from the command palette.
 4. Use the preview toolbar to zoom or fit pages to the available width.
@@ -48,8 +54,8 @@ The command **Typstian: Save the compiled PDF to the vault** compiles the active
 `.typ` file, unsaved text included, and writes the PDF beside it under the same
 name. An existing file is never overwritten: the PDF lands on the next free
 `name-1.pdf`, `name-2.pdf`, and so on, and the notice names the file it wrote.
-This is the only place Typstian writes to your vault, and it happens only when
-you run this command.
+Creating a Typst file and saving a PDF are the only two places Typstian writes
+to your vault, and both happen only when you ask for them.
 
 Typstian recompiles shortly after you stop typing, using the unsaved text of
 every open Typst editor in place of its file on disk. Obsidian still owns the

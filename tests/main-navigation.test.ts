@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { TFile, View, type WorkspaceLeaf } from "obsidian";
+import { TFile, TFolder, View, type Command, type WorkspaceLeaf } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
 import type { DependencyIndex } from "../src/dependency-index";
@@ -208,6 +208,7 @@ function fileAt(path: string): TFile {
 function harness(leaves: DeferredLeaf[]) {
   const files = new Map<string, TFile>();
   const activeCallbacks: Array<(leaf: unknown) => void> = [];
+  const menuCallbacks: Array<(menu: unknown, file: unknown) => void> = [];
   const vaultCallbacks = new Map<string, (...args: unknown[]) => void>();
   const workspace = {
     activeLeaf: { id: "preview" } as unknown,
@@ -228,6 +229,7 @@ function harness(leaves: DeferredLeaf[]) {
     }),
     on: vi.fn((event: string, callback: (leaf: unknown) => void) => {
       if (event === "active-leaf-change") activeCallbacks.push(callback);
+      if (event === "file-menu") menuCallbacks.push(callback);
       return { event, callback };
     }),
     onLayoutReady: vi.fn(),
@@ -240,7 +242,7 @@ function harness(leaves: DeferredLeaf[]) {
   };
   const vault = {
     adapter: {},
-    getAbstractFileByPath: vi.fn((path: string) => {
+    getAbstractFileByPath: vi.fn((path: string): TFile | null => {
       let file = files.get(path);
       if (file === undefined) {
         const name = path.split("/").pop() ?? path;
@@ -257,10 +259,24 @@ function harness(leaves: DeferredLeaf[]) {
       vaultCallbacks.set(event, callback);
       return { event, callback };
     }),
+    create: vi.fn((path: string) => {
+      const file = Object.assign(new TFile(), {
+        path,
+        extension: "typ",
+        basename: (path.split("/").pop() ?? path).replace(/\.typ$/, ""),
+      });
+      files.set(path, file);
+      return Promise.resolve(file);
+    }),
     read: vi.fn(),
   };
   const app = { vault, workspace };
   const plugin = new TypstianPlugin(app as never, {} as never);
+  const commands = new Map<string, Command>();
+  vi.spyOn(plugin, "addCommand").mockImplementation((command) => {
+    commands.set(command.id, command);
+    return command;
+  });
   const internals = plugin as unknown as {
     dependencies: DependencyIndex;
     previewViews(): Array<{
@@ -278,7 +294,16 @@ function harness(leaves: DeferredLeaf[]) {
   };
   vi.spyOn(internals, "vaultRoot").mockReturnValue("/vault");
   vi.spyOn(internals, "compilationRoot").mockReturnValue("/vault");
-  return { activeCallbacks, internals, plugin, vaultCallbacks, workspace };
+  return {
+    activeCallbacks,
+    commands,
+    internals,
+    menuCallbacks,
+    plugin,
+    vault,
+    vaultCallbacks,
+    workspace,
+  };
 }
 
 describe("TypstianPlugin source navigation", () => {
@@ -416,6 +441,102 @@ describe("TypstianPlugin source navigation", () => {
 
     expect(sourceLeaf.leaf.detach).not.toHaveBeenCalled();
     expect(sourceLeaf.reveals[0]).not.toHaveBeenCalled();
+  });
+});
+
+describe("TypstianPlugin Typst file creation", () => {
+  function menuItems(callback: (menu: unknown, file: unknown) => void, file: unknown) {
+    const items: Array<{ title: string; click: () => void }> = [];
+    const menu = {
+      addItem(build: (item: unknown) => void) {
+        const item = {
+          setTitle(title: string) { entry.title = title; return item; },
+          setIcon() { return item; },
+          onClick(handler: () => void) { entry.click = handler; return item; },
+        };
+        const entry = { title: "", click: (): void => undefined };
+        build(item);
+        items.push(entry);
+        return menu;
+      },
+    };
+    callback(menu, file);
+    return items;
+  }
+
+  it("creates Untitled.typ at the compilation root and opens it in the editor", async () => {
+    const target = deferredLeaf();
+    target.finish();
+    const { commands, plugin, vault, workspace } = harness([target.leaf]);
+    vault.getAbstractFileByPath.mockReturnValue(null);
+    await plugin.onload();
+
+    commands.get("create-typst-file")?.callback?.();
+    await vi.waitFor(() => {
+      expect(workspace.revealLeaf).toHaveBeenCalledWith(target.leaf);
+    });
+
+    expect(vault.create).toHaveBeenCalledWith("Untitled.typ", "= Untitled\n");
+    expect(target.leaf.openFile).toHaveBeenCalledWith(
+      expect.objectContaining({ path: "Untitled.typ" }),
+    );
+    plugin.onunload();
+  });
+
+  it("refuses to create a file when the compilation root escapes the vault", async () => {
+    const target = deferredLeaf();
+    target.finish();
+    const { commands, internals, plugin, vault } = harness([target.leaf]);
+    vault.getAbstractFileByPath.mockReturnValue(null);
+    // `rootPath` is free text, and every other consumer routes it through the
+    // policy that refuses a root outside the vault.
+    vi.spyOn(internals, "compilationRoot").mockImplementation(() => {
+      throw new Error("Compilation root must resolve inside the vault.");
+    });
+    await plugin.onload();
+
+    commands.get("create-typst-file")?.callback?.();
+    await vi.waitFor(() => {
+      expect(vault.create).not.toHaveBeenCalled();
+    });
+
+    plugin.onunload();
+  });
+
+  it("never overwrites a taken name", async () => {
+    const target = deferredLeaf();
+    target.finish();
+    const { commands, plugin, vault } = harness([target.leaf]);
+    vault.getAbstractFileByPath.mockImplementation(
+      (path: string) => (path === "Untitled.typ" ? fileAt(path) : null),
+    );
+    await plugin.onload();
+
+    commands.get("create-typst-file")?.callback?.();
+    await vi.waitFor(() => {
+      expect(vault.create).toHaveBeenCalledWith("Untitled 1.typ", "= Untitled 1\n");
+    });
+    plugin.onunload();
+  });
+
+  it("offers the same action inside the folder a user right-clicks", async () => {
+    const target = deferredLeaf();
+    target.finish();
+    const { commands, menuCallbacks, plugin, vault } = harness([target.leaf]);
+    vault.getAbstractFileByPath.mockReturnValue(null);
+    await plugin.onload();
+
+    const forFolder = menuItems(menuCallbacks[0]!, Object.assign(new TFolder(), { path: "book" }));
+    const forFile = menuItems(menuCallbacks[0]!, fileAt("book/main.typ"));
+    expect(forFile).toHaveLength(0);
+    expect(forFolder.map((item) => item.title)).toEqual(["New Typst file"]);
+
+    forFolder[0]!.click();
+    await vi.waitFor(() => {
+      expect(vault.create).toHaveBeenCalledWith("book/Untitled.typ", "= Untitled\n");
+    });
+    expect(commands.get("create-typst-file")).toBeDefined();
+    plugin.onunload();
   });
 });
 

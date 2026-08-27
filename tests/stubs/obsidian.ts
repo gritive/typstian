@@ -35,6 +35,10 @@ export class TFile {
   }
 }
 
+export class TFolder {
+  constructor(public path: string = "") {}
+}
+
 export class FileSystemAdapter {
   constructor(private readonly basePath: string) {}
 
