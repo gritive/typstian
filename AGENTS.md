@@ -46,6 +46,10 @@ and embeds the result in `main.js`; Community releases contain only `main.js`,
   unreadable, outside the vault). `font-residency.ts` and
   `compile-deadline.ts` hold the two policies those three share — which font bytes a worker keeps, and how long a request may
   take — as pure functions, so both are testable without Obsidian.
+  `fontconfig-directories.ts` is the same kind of extraction for reading
+  fontconfig's own configuration: it maps the environment onto the directories
+  that configuration declares and never opens a font, so `system-fonts.ts` is
+  left with discovery and registration.
 - `helper/wasm/src/protocol.rs` holds the serde-only wire types the plugin and
   the compiler agree on. It was a separate `typstian-core` crate while a native
   helper existed; the bundled WASM compiler is the only consumer now, so it is a
@@ -124,7 +128,8 @@ and embeds the result in `main.js`; Community releases contain only `main.js`,
   Flatpak host font mounts, and the `<dir>` elements declared by fontconfig's
   configuration — both the system's (`$FONTCONFIG_FILE`, or each root on
   `$FONTCONFIG_PATH`, default `/etc/fonts`) and the user's
-  (`$XDG_CONFIG_HOME/fontconfig`, `~/.fonts.conf`), which ranks first. Those are
+  (`$XDG_CONFIG_HOME/fontconfig`, `~/.fonts.conf`), which ranks ahead of the
+  system's — behind `~/.fonts` and `$XDG_DATA_HOME/fonts`, which lead. Those are
   directories the machine has already told every application about, which is why
   reading them does not reopen the user-typed-path decision below. Configuration
   files include each other, so the reader follows `<include>` and terminates on
