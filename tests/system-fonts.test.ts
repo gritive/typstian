@@ -59,9 +59,9 @@ function withVirtualFontconfig<T>(files: Record<string, string>, run: () => T): 
     if (contents === undefined) throw new Error(`ENOENT: ${file}`);
     return contents;
   }) as unknown as typeof fs.readFileSync);
-  const readDir = vi.spyOn(fs, "readdirSync").mockImplementation((() => {
+  const readDir = vi.spyOn(fs, "readdirSync").mockImplementation(() => {
     throw new Error("ENOENT");
-  }) as unknown as typeof fs.readdirSync);
+  });
   try {
     return run();
   } finally {
