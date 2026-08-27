@@ -116,6 +116,7 @@ describe("system font directories", () => {
         configuration,
         `<fontconfig>
   <dir>~/my-fonts</dir>
+  <dir>~otheruser/fonts</dir>
   <dir prefix="xdg">my-xdg-fonts</dir>
 </fontconfig>`,
       );
@@ -124,6 +125,9 @@ describe("system font directories", () => {
     });
 
     expect(directories).toContain(path.join(os.homedir(), "my-fonts"));
+    // "~otheruser" is another account's home, which this process cannot resolve.
+    // Rewriting it under $HOME would invent a path belonging to nobody.
+    expect(directories).not.toContain(path.join(os.homedir(), "otheruser/fonts"));
     // Not "/data/home/fonts": the standard list already produces that, so it
     // could not tell the xdg prefix from the unconditional XDG_DATA_HOME entry.
     expect(directories).toContain("/data/home/my-xdg-fonts");

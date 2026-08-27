@@ -202,7 +202,10 @@ function parseFontconfigDirectories(xml: string, roots: FontconfigRoots): string
   for (const match of xml.replace(FONTCONFIG_COMMENT, "").matchAll(FONTCONFIG_DIR_ELEMENT)) {
     const directory = (match[2] ?? "").trim();
     if (!directory) continue;
-    if (directory.startsWith("~")) {
+    // Only this process's own home. "~otheruser/fonts" names another account,
+    // which nothing here can resolve, so it falls through and is dropped as
+    // non-absolute rather than being rewritten under $HOME.
+    if (directory === "~" || directory.startsWith("~/")) {
       directories.push(path.join(roots.home, directory.slice(1)));
       continue;
     }
