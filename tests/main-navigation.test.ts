@@ -638,6 +638,18 @@ describe("TypstianPlugin Typst file creation", () => {
 });
 
 describe("TypstianPlugin preview entry points", () => {
+  it("calls the preview by one name the user can recognize anywhere", async () => {
+    const { commands, plugin } = harness([]);
+    await plugin.onload();
+
+    // Spelled out rather than compared to the constant: a test that reads the
+    // same constant the surfaces read cannot notice the label changing.
+    expect(OPEN_PREVIEW_LABEL).toBe("Open Typst preview");
+    expect(commands.get("open-typst-preview")?.name).toBe("Open Typst preview");
+
+    plugin.onunload();
+  });
+
   it("opens the preview from the file menu of a Typst file", async () => {
     const { internals, menuCallbacks, plugin } = harness([]);
     const openPreview = vi.spyOn(internals, "openPreview").mockResolvedValue();
