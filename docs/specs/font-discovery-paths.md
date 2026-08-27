@@ -56,8 +56,12 @@ and the environment.
   engine, so an unbounded read is a hang, not just a waste. The bounds apply to
   included files too, not only to the file a root names directly.
 - **AC9** `<include>` elements are followed, with or without
-  `ignore_missing="yes"`, under the same `~` and `prefix="xdg"` expansion the
-  `<dir>` reader applies. A target that is a directory contributes its `*.conf`
+  `ignore_missing="yes"`. `~` expands as it does for `<dir>`, but
+  `prefix="xdg"` does not: fontconfig resolves it against `$XDG_CONFIG_HOME` for
+  an include and `$XDG_DATA_HOME` for a directory, and the stock
+  `/etc/fonts/fonts.conf` ships
+  `<include ignore_missing="yes" prefix="xdg">fontconfig/conf.d</include>`
+  relying on it. A target that is a directory contributes its `*.conf`
   files. A configuration that includes itself, directly or in a cycle,
   terminates: recursion stops at `MAX_FONTCONFIG_INCLUDE_DEPTH` and a file
   already read is never read twice. Without `<include>`, a dotfile setup whose
