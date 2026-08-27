@@ -4,6 +4,7 @@ import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  MAX_FONTCONFIG_FILE_BYTES,
   MAX_SYSTEM_FONT_BYTES,
   registerSystemFonts,
   systemFontDirectories,
@@ -59,6 +60,11 @@ function withVirtualFontconfig<T>(files: Record<string, string>, run: () => T): 
     if (contents === undefined) throw new Error(`ENOENT: ${file}`);
     return contents;
   }) as unknown as typeof fs.readFileSync);
+  const stat = vi.spyOn(fs, "statSync").mockImplementation(((file: string) => {
+    const contents = files[file];
+    if (contents === undefined) throw new Error(`ENOENT: ${file}`);
+    return { size: Buffer.byteLength(contents) };
+  }) as unknown as typeof fs.statSync);
   const readDir = vi.spyOn(fs, "readdirSync").mockImplementation(() => {
     throw new Error("ENOENT");
   });
@@ -66,6 +72,7 @@ function withVirtualFontconfig<T>(files: Record<string, string>, run: () => T): 
     return run();
   } finally {
     readFile.mockRestore();
+    stat.mockRestore();
     readDir.mockRestore();
   }
 }
@@ -249,6 +256,25 @@ describe("system font directories", () => {
     expect(directories).toEqual([...new Set(directories)]);
     expect(directories.every((directory) => path.isAbsolute(directory))).toBe(true);
     expect(directories).toContain("/opt/twice");
+  });
+
+  it("ignores a fontconfig file past the byte bound", () => {
+    const directories = withFontconfig({}, (root) => {
+      const configuration = path.join(root, "huge.conf");
+      const declaration = "<fontconfig><dir>/opt/oversized-declaration</dir>";
+      fs.writeFileSync(
+        configuration,
+        declaration +
+          "<!--" +
+          "p".repeat(MAX_FONTCONFIG_FILE_BYTES) +
+          "--></fontconfig>",
+      );
+      vi.stubEnv("FONTCONFIG_FILE", configuration);
+      return withPlatform("linux", () => systemFontDirectories());
+    });
+
+    expect(directories).not.toContain("/opt/oversized-declaration");
+    expect(directories).toContain("/usr/share/fonts");
   });
 
   it("leaves macOS and Windows alone and never consults fontconfig there", () => {

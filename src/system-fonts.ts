@@ -183,6 +183,12 @@ export async function registerSystemFonts(
 // is the `<dir>` elements. A regex over the comment-stripped text avoids
 // pulling in a parser — and avoids depending on DOMParser, which exists in the
 // renderer but not in the worker or in tests.
+// Discovery runs synchronously on the thread that initializes the engine, so
+// these bound what a hostile or merely broken fontconfig tree can cost it. A
+// real fonts.conf is a few kilobytes and a conf.d holds a few dozen fragments.
+export const MAX_FONTCONFIG_FILE_BYTES = 1024 * 1024;
+export const MAX_FONTCONFIG_FRAGMENTS = 256;
+
 const FONTCONFIG_DIR_ELEMENT = /<dir\b([^>]*)>([^<]*)<\/dir>/g;
 const FONTCONFIG_COMMENT = /<!--[\s\S]*?-->/g;
 
@@ -232,6 +238,8 @@ function readFontconfigRoot(directory: string, roots: FontconfigRoots): string[]
 
 function readFontconfigFile(file: string, roots: FontconfigRoots): string[] {
   try {
+    // Size first, so an oversized file is never pulled into memory at all.
+    if (fs.statSync(file).size > MAX_FONTCONFIG_FILE_BYTES) return [];
     return parseFontconfigDirectories(fs.readFileSync(file, "utf8"), roots);
   } catch {
     // A missing, unreadable, or malformed configuration is not an error worth
