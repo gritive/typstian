@@ -204,7 +204,7 @@ private pageObserver: IntersectionObserver | null = null;
 
     const data = input instanceof Blob
       ? new Uint8Array(await input.arrayBuffer())
-      : input.slice();
+      : input;
     if (!this.isCurrent(generation)) return;
 
     const loadingTask = this.engine.load(data);

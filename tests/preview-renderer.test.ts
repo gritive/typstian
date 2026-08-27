@@ -43,6 +43,7 @@ describe("PreviewRenderer", () => {
     await renderer.render({ status: "ready", pdf });
 
     expect(load).toHaveBeenCalledWith(pdf);
+    expect(load.mock.calls[0]?.[0]).toBe(pdf);
     expect(root.querySelector(".typst-pdf-pages")).not.toBeNull();
     expect(root.querySelector("img")).toBeNull();
   });
