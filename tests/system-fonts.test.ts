@@ -517,7 +517,29 @@ describe("system font directories", () => {
     expect(directories).not.toContain(`/opt/depth-${MAX_FONTCONFIG_INCLUDE_DEPTH + 1}`);
   });
 
-  it("follows an ignore_missing include, a ~ include, and a directory include", () => {
+  it("expands a ~ include and reads the file it names", () => {
+    // Through the virtual filesystem, because the only way to prove the
+    // expansion is to have a file at the expanded path — and a test must not
+    // write into the real home directory to get one.
+    const directories = withFontconfig({}, () =>
+      withVirtualFontconfig(
+        {
+          "/opt/conf/fonts.conf":
+            "<fontconfig><include>~/my-includes/extra.conf</include></fontconfig>",
+          [path.join(os.homedir(), "my-includes/extra.conf")]:
+            "<fontconfig><dir>/opt/tilde-included</dir></fontconfig>",
+        },
+        () => {
+          vi.stubEnv("FONTCONFIG_FILE", "/opt/conf/fonts.conf");
+          return withPlatform("linux", () => systemFontDirectories());
+        },
+      ),
+    );
+
+    expect(directories).toContain("/opt/tilde-included");
+  });
+
+  it("survives a missing include, and follows one naming a directory", () => {
     const directories = linuxDirectoriesFor((root) => {
       const includedDirectory = path.join(root, "conf-parts");
       fs.mkdirSync(includedDirectory, { recursive: true });
