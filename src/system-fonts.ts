@@ -205,7 +205,10 @@ function isDirectory(target: string): boolean {
   }
 }
 
-interface FontconfigRoots {
+// The bases a `~` or a `prefix="xdg"` path expands against. Not a "root": this
+// file already spends that word on a configuration root, and the plugin spends
+// it on discovery roots and the compilation root.
+interface FontconfigPrefixes {
   readonly home: string;
   readonly dataHome: string;
 }
@@ -215,16 +218,16 @@ interface FontconfigRoots {
 function expandFontconfigPath(
   value: string,
   attributes: string,
-  roots: FontconfigRoots,
+  prefixes: FontconfigPrefixes,
 ): string | undefined {
   // Only this process's own home. "~otheruser/fonts" names another account,
   // which nothing here can resolve, so it is dropped rather than rewritten
   // under $HOME.
-  if (value === "~" || value.startsWith("~/")) return path.join(roots.home, value.slice(1));
+  if (value === "~" || value.startsWith("~/")) return path.join(prefixes.home, value.slice(1));
   // `prefix="xdg"` makes a relative path mean "under the XDG base directory",
   // which for fonts is $XDG_DATA_HOME. An absolute path ignores it.
   if (/\bprefix\s*=\s*["']xdg["']/.test(attributes) && !path.isAbsolute(value)) {
-    return path.join(roots.dataHome, value);
+    return path.join(prefixes.dataHome, value);
   }
   return path.isAbsolute(value) ? value : undefined;
 }
@@ -232,13 +235,13 @@ function expandFontconfigPath(
 function parseFontconfigElements(
   xml: string,
   element: RegExp,
-  roots: FontconfigRoots,
+  prefixes: FontconfigPrefixes,
 ): string[] {
   const paths: string[] = [];
   for (const match of xml.replace(FONTCONFIG_COMMENT, "").matchAll(element)) {
     const value = (match[2] ?? "").trim();
     if (!value) continue;
-    const expanded = expandFontconfigPath(value, match[1] ?? "", roots);
+    const expanded = expandFontconfigPath(value, match[1] ?? "", prefixes);
     if (expanded) paths.push(expanded);
   }
   return paths;
@@ -246,11 +249,11 @@ function parseFontconfigElements(
 
 // One configuration root contributes its own fonts.conf plus every fragment in
 // its conf.d, which is where a distribution and a user alike drop declarations.
-function readFontconfigRoot(directory: string, roots: FontconfigRoots): string[] {
+function readFontconfigRoot(directory: string, prefixes: FontconfigPrefixes): string[] {
   return [
     path.join(directory, "fonts.conf"),
     ...dotConfFiles(path.join(directory, "conf.d")),
-  ].flatMap((file) => readFontconfigFile(file, roots));
+  ].flatMap((file) => readFontconfigFile(file, prefixes));
 }
 
 // The `.conf` files a directory contributes: a root's conf.d, and what an
@@ -272,7 +275,7 @@ function dotConfFiles(directory: string): string[] {
 
 function readFontconfigFile(
   file: string,
-  roots: FontconfigRoots,
+  prefixes: FontconfigPrefixes,
   visited: Set<string> = new Set(),
   depth = 0,
 ): string[] {
@@ -282,14 +285,14 @@ function readFontconfigFile(
     // Size first, so an oversized file is never pulled into memory at all.
     if (fs.statSync(file).size > MAX_FONTCONFIG_FILE_BYTES) return [];
     const xml = fs.readFileSync(file, "utf8");
-    const included = parseFontconfigElements(xml, FONTCONFIG_INCLUDE_ELEMENT, roots).flatMap(
+    const included = parseFontconfigElements(xml, FONTCONFIG_INCLUDE_ELEMENT, prefixes).flatMap(
       (target) =>
         // An include naming a directory means every `.conf` inside it.
         (isDirectory(target) ? dotConfFiles(target) : [target]).flatMap((next) =>
-          readFontconfigFile(next, roots, visited, depth + 1),
+          readFontconfigFile(next, prefixes, visited, depth + 1),
         ),
     );
-    return [...parseFontconfigElements(xml, FONTCONFIG_DIR_ELEMENT, roots), ...included];
+    return [...parseFontconfigElements(xml, FONTCONFIG_DIR_ELEMENT, prefixes), ...included];
   } catch {
     // A missing, unreadable, or malformed configuration is not an error worth
     // failing discovery over: the standard paths still stand on their own.
@@ -323,21 +326,21 @@ export function systemFontDirectories(): string[] {
   // FONTCONFIG_FILE names a whole configuration and replaces the system one;
   // otherwise the system configuration lives under FONTCONFIG_PATH or /etc/fonts.
   const fontconfigFile = process.env.FONTCONFIG_FILE;
-  const roots = { home, dataHome };
+  const prefixes = { home, dataHome };
   const systemFontconfig = fontconfigFile
-    ? readFontconfigFile(fontconfigFile, roots)
+    ? readFontconfigFile(fontconfigFile, prefixes)
     : // FONTCONFIG_PATH is a search path, not a directory: fontconfig reads
       // every root on it, the way XDG_DATA_DIRS is read above.
       (process.env.FONTCONFIG_PATH ?? "/etc/fonts")
         .split(path.delimiter)
         .filter(Boolean)
-        .flatMap((directory) => readFontconfigRoot(directory, roots));
+        .flatMap((directory) => readFontconfigRoot(directory, prefixes));
   const configHome = process.env.XDG_CONFIG_HOME ?? path.join(home, ".config");
   const userFontconfig = [
-    ...readFontconfigRoot(path.join(configHome, "fontconfig"), roots),
+    ...readFontconfigRoot(path.join(configHome, "fontconfig"), prefixes),
     // fontconfig still honours this pre-XDG location, so a user whose <dir>
     // lives there is visible to every other application but would not be here.
-    ...readFontconfigFile(path.join(home, ".fonts.conf"), roots),
+    ...readFontconfigFile(path.join(home, ".fonts.conf"), prefixes),
   ];
   // A fontconfig configuration routinely re-declares a standard path, and the
   // first occurrence is the ranking that matters, so the Set keeps it.
