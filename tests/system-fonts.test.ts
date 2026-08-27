@@ -100,7 +100,7 @@ function linuxDirectoriesFor(
 }
 
 describe("system font directories", () => {
-  it("includes the mount points a sandboxed Obsidian sees host fonts at", () => {
+  it("includes the mount points a Flatpak Obsidian sees host fonts at", () => {
     const directories = withPlatform("linux", () => systemFontDirectories());
 
     // Last, not merely present: the host mounts duplicate the whole host font

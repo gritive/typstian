@@ -353,9 +353,9 @@ export function systemFontDirectories(): string[] {
     ...userFontconfig,
     ...systemFontconfig,
     ...dataDirectories.map((directory) => path.join(directory, "fonts")),
-    // A sandboxed Obsidian (Flatpak, Snap) sees the host's fonts bound at these
-    // mount points; the sandbox's own /usr/share/fonts is the runtime's
-    // near-empty set, so without these the host's fonts are invisible.
+    // Under Flatpak the host's system and user fonts are bound at these mount
+    // points; the sandbox's own /usr/share/fonts is the runtime's near-empty
+    // set, so without these the host's fonts are invisible.
     "/run/host/fonts",
     "/run/host/local-fonts",
     "/run/host/user-fonts",
