@@ -83,7 +83,7 @@ describe("system font directories", () => {
         configuration,
         `<fontconfig>
   <dir>~/my-fonts</dir>
-  <dir prefix="xdg">fonts</dir>
+  <dir prefix="xdg">my-xdg-fonts</dir>
 </fontconfig>`,
       );
       vi.stubEnv("FONTCONFIG_FILE", configuration);
@@ -91,7 +91,9 @@ describe("system font directories", () => {
     });
 
     expect(directories).toContain(path.join(os.homedir(), "my-fonts"));
-    expect(directories).toContain("/data/home/fonts");
+    // Not "/data/home/fonts": the standard list already produces that, so it
+    // could not tell the xdg prefix from the unconditional XDG_DATA_HOME entry.
+    expect(directories).toContain("/data/home/my-xdg-fonts");
   });
 
   it("reads fonts.conf and every conf.d fragment from the fontconfig path", () => {
