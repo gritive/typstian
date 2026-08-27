@@ -689,6 +689,44 @@ describe("system font directories", () => {
     expect(directories).not.toContain(`/opt/budget-${MAX_FONTCONFIG_FILES - 1}`);
   });
 
+  it("shares one configuration-file budget across roots, fragments, and recursive includes", () => {
+    const firstRoot = "/opt/first-fontconfig";
+    const secondRoot = "/opt/second-fontconfig";
+    const firstEntry = path.join(firstRoot, "fonts.conf");
+    const secondEntry = path.join(secondRoot, "fonts.conf");
+    const include = (index: number) => path.join(firstRoot, `include-${index}.conf`);
+    const fragment = (index: number) =>
+      path.join(firstRoot, "conf.d", `${String(index).padStart(5, "0")}.conf`);
+    const fragmentCount = MAX_FONTCONFIG_FILES - 3;
+    const files: Record<string, string> = {
+      [firstEntry]: `<fontconfig><include>${include(0)}</include></fontconfig>`,
+      [include(0)]: `<fontconfig><include>${include(1)}</include></fontconfig>`,
+      [include(1)]: "<fontconfig><dir>/opt/from-recursive-include</dir></fontconfig>",
+      [secondEntry]: "<fontconfig><dir>/opt/past-scan-budget</dir></fontconfig>",
+    };
+    for (let index = 0; index < fragmentCount; index += 1) {
+      files[fragment(index)] =
+        `<fontconfig><dir>/opt/mixed-fragment-${index}</dir></fontconfig>`;
+    }
+
+    const { directories, reads } = withFontconfig({}, () =>
+      withVirtualFontconfig(files, (reads) => {
+        vi.stubEnv("FONTCONFIG_PATH", [firstRoot, secondRoot].join(path.delimiter));
+        return {
+          directories: withPlatform("linux", () => systemFontDirectories()),
+          reads,
+        };
+      }),
+    );
+
+    expect(reads).toHaveLength(MAX_FONTCONFIG_FILES);
+    expect(reads).toContain(include(1));
+    expect(reads).toContain(fragment(fragmentCount - 1));
+    expect(reads).not.toContain(secondEntry);
+    expect(directories).toContain("/opt/from-recursive-include");
+    expect(directories).not.toContain("/opt/past-scan-budget");
+  });
+
   it("leaves macOS and Windows alone and never consults fontconfig there", () => {
     const { darwin, win32 } = withFontconfig(
       { LOCALAPPDATA: "C:\\Users\\me\\AppData\\Local", WINDIR: undefined },
