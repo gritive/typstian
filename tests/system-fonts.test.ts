@@ -75,6 +75,24 @@ describe("system font directories", () => {
 
     expect(directories).toContain("/opt/declared-fonts");
   });
+
+  it("expands ~ and resolves a relative xdg-prefixed directory against XDG_DATA_HOME", () => {
+    const directories = withFontconfig({ XDG_DATA_HOME: "/data/home" }, (root) => {
+      const configuration = path.join(root, "fonts.conf");
+      fs.writeFileSync(
+        configuration,
+        `<fontconfig>
+  <dir>~/my-fonts</dir>
+  <dir prefix="xdg">fonts</dir>
+</fontconfig>`,
+      );
+      vi.stubEnv("FONTCONFIG_FILE", configuration);
+      return withPlatform("linux", () => systemFontDirectories());
+    });
+
+    expect(directories).toContain(path.join(os.homedir(), "my-fonts"));
+    expect(directories).toContain("/data/home/fonts");
+  });
 });
 
 describe("system font loading", () => {

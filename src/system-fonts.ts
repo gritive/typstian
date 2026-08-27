@@ -186,18 +186,34 @@ export async function registerSystemFonts(
 const FONTCONFIG_DIR_ELEMENT = /<dir\b([^>]*)>([^<]*)<\/dir>/g;
 const FONTCONFIG_COMMENT = /<!--[\s\S]*?-->/g;
 
-function parseFontconfigDirectories(xml: string): string[] {
+interface FontconfigRoots {
+  readonly home: string;
+  readonly dataHome: string;
+}
+
+function parseFontconfigDirectories(xml: string, roots: FontconfigRoots): string[] {
   const directories: string[] = [];
   for (const match of xml.replace(FONTCONFIG_COMMENT, "").matchAll(FONTCONFIG_DIR_ELEMENT)) {
     const directory = match[2].trim();
-    if (directory) directories.push(directory);
+    if (!directory) continue;
+    if (directory.startsWith("~")) {
+      directories.push(path.join(roots.home, directory.slice(1)));
+      continue;
+    }
+    // `prefix="xdg"` makes a relative path mean "under the XDG base directory",
+    // which for a font directory is $XDG_DATA_HOME. An absolute path ignores it.
+    if (/\bprefix\s*=\s*["']xdg["']/.test(match[1]) && !path.isAbsolute(directory)) {
+      directories.push(path.join(roots.dataHome, directory));
+      continue;
+    }
+    if (path.isAbsolute(directory)) directories.push(directory);
   }
   return directories;
 }
 
-function readFontconfigFile(file: string): string[] {
+function readFontconfigFile(file: string, roots: FontconfigRoots): string[] {
   try {
-    return parseFontconfigDirectories(fs.readFileSync(file, "utf8"));
+    return parseFontconfigDirectories(fs.readFileSync(file, "utf8"), roots);
   } catch {
     // A missing, unreadable, or malformed configuration is not an error worth
     // failing discovery over: the standard paths still stand on their own.
@@ -232,7 +248,7 @@ export function systemFontDirectories(): string[] {
   return [
     path.join(home, ".fonts"),
     path.join(dataHome, "fonts"),
-    ...(fontconfigFile ? readFontconfigFile(fontconfigFile) : []),
+    ...(fontconfigFile ? readFontconfigFile(fontconfigFile, { home, dataHome }) : []),
     ...dataDirectories.map((directory) => path.join(directory, "fonts")),
     // A sandboxed Obsidian (Flatpak, Snap) sees the host's fonts bound at these
     // mount points; the sandbox's own /usr/share/fonts is the runtime's
