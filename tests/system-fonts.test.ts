@@ -318,6 +318,19 @@ describe("system font directories", () => {
     expect(absent).toContain(path.join(os.homedir(), ".fonts"));
   });
 
+  it("decodes predefined entities and CDATA in a directory value", () => {
+    const directories = linuxDirectoriesFor(
+      () => `<fontconfig>
+  <dir>/opt/rock&amp;roll</dir>
+  <dir><![CDATA[/opt/cdata fonts]]></dir>
+</fontconfig>`,
+    );
+
+    expect(directories).toContain("/opt/rock&roll");
+    expect(directories).not.toContain("/opt/rock&amp;roll");
+    expect(directories).toContain("/opt/cdata fonts");
+  });
+
   it("returns absolute directories without duplicates", () => {
     const directories = linuxDirectoriesFor(
       () => `<fontconfig>

@@ -196,6 +196,32 @@ export const MAX_FONTCONFIG_INCLUDE_DEPTH = 8;
 const FONTCONFIG_DIR_ELEMENT = /<dir\b([^>]*)>([^<]*)<\/dir>/g;
 const FONTCONFIG_INCLUDE_ELEMENT = /<include\b([^>]*)>([^<]*)<\/include>/g;
 const FONTCONFIG_COMMENT = /<!--[\s\S]*?-->/g;
+const FONTCONFIG_CDATA = /<!\[CDATA\[([\s\S]*?)\]\]>/g;
+const XML_ENTITY = /&(amp|lt|gt|quot|apos);/g;
+const XML_ENTITY_VALUES: Record<string, string> = {
+  amp: "&",
+  lt: "<",
+  gt: ">",
+  quot: '"',
+  apos: "'",
+};
+
+// The element regexes capture `[^<]*`, so a CDATA section would break the match
+// and its markup would survive into the path. Re-escaping the section's text
+// puts it back on the ordinary path: the entity decode below undoes exactly
+// this escape, so the round trip is lossless.
+function inlineCdata(xml: string): string {
+  return xml.replace(FONTCONFIG_CDATA, (_match, text: string) =>
+    text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"),
+  );
+}
+
+// `&` is legal in a filename, so `<dir>/opt/rock&amp;roll</dir>` names a real
+// directory that a raw read would miss. One left-to-right pass, so `&amp;lt;`
+// correctly yields `&lt;` rather than `<`.
+function decodeXmlEntities(text: string): string {
+  return text.replace(XML_ENTITY, (match, name: string) => XML_ENTITY_VALUES[name] ?? match);
+}
 
 function isDirectory(target: string): boolean {
   try {
@@ -247,8 +273,9 @@ function parseFontconfigElements(
   bases: FontconfigBases,
 ): string[] {
   const paths: string[] = [];
-  for (const match of xml.replace(FONTCONFIG_COMMENT, "").matchAll(element)) {
-    const value = (match[2] ?? "").trim();
+  const text = inlineCdata(xml.replace(FONTCONFIG_COMMENT, ""));
+  for (const match of text.matchAll(element)) {
+    const value = decodeXmlEntities(match[2] ?? "").trim();
     if (!value) continue;
     const expanded = expandFontconfigPath(value, match[1] ?? "", prefixes, bases);
     if (expanded) paths.push(expanded);
