@@ -120,8 +120,15 @@ and embeds the result in `main.js`; Community releases contain only `main.js`,
   each compiler session. Vault inputs arrive as file-by-file transferable chunks
   through `src/wasm-vault-reader.ts`, capped at 70 MiB per compile. Its rooted reader
   opens each canonical regular file and rechecks device and inode before returning
-  bytes. System-font discovery separately scans standard OS directories under file,
-  byte, and face bounds. The worker retains parsed metadata; selected font bytes
+  bytes. System-font discovery separately scans standard OS directories, the
+  Flatpak host font mounts, and the `<dir>` elements the system's own fontconfig
+  configuration declares — those are directories the machine has already told
+  every application about, which is why reading them does not reopen the
+  user-typed-path decision below. Bounds: `MAX_SYSTEM_FONT_FILES`,
+  `MAX_SYSTEM_FONT_SCAN_BYTES`, `MAX_SYSTEM_FONT_BYTES`, and, because
+  discovery runs synchronously on the init thread and fontconfig files include
+  each other, `MAX_FONTCONFIG_FILE_BYTES`, `MAX_FONTCONFIG_FRAGMENTS`, and
+  `MAX_FONTCONFIG_INCLUDE_DEPTH`. The worker retains parsed metadata; selected font bytes
   load through an allowlisted callback only for the active compile, capped at
   128 MiB in aggregate. Keep network,
   telemetry, native process launch, and compiler downloads out of the plugin.
@@ -182,8 +189,9 @@ and embeds the result in `main.js`; Community releases contain only `main.js`,
   `InMemoryWorld::new`; `typst-kit` runs with `default-features = false`, so
   `fonts::embedded()` is gone. Dropping it too fails every equation with
   `no font could be found` — Typst treats that as a compile error, not a
-  fallback. Text faces come from bounded standard OS directories. No additional
-  font paths.
+  fallback. Text faces come from those bounded sources — standard OS
+  directories, the Flatpak host mounts, and fontconfig's own declarations. No
+  user-typed font paths.
 - **`@preview` packages resolve from local files only.** `src/typst-packages.ts`
   maps a `{namespace}/{name}/{version}/{path}` key onto Typst's own data and
   cache package directories and reads it through the same rooted reader the
