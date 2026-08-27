@@ -35,9 +35,11 @@ and the environment.
   configuration are in the returned list, with `~` expanded to the home
   directory and a relative `prefix="xdg"` resolved against `$XDG_DATA_HOME`.
 - **AC3** fontconfig configuration is read from `$FONTCONFIG_FILE` when set,
-  otherwise from `$FONTCONFIG_PATH`/`/etc/fonts` — `fonts.conf` plus every
-  `conf.d/*.conf` fragment — and from
-  `$XDG_CONFIG_HOME/fontconfig/{fonts.conf,conf.d/*.conf}`.
+  otherwise from `$FONTCONFIG_PATH` — a colon-separated *search path*, each entry
+  a configuration root, defaulting to `/etc/fonts` — reading `fonts.conf` plus
+  every `conf.d/*.conf` fragment in each, and from
+  `$XDG_CONFIG_HOME/fontconfig/{fonts.conf,conf.d/*.conf}` and the legacy
+  `~/.fonts.conf` that fontconfig itself still honours.
 - **AC4** A missing, unreadable, or malformed fontconfig file yields no
   directories and no thrown error: discovery keeps the standard paths.
 - **AC5** The user's own directories still rank ahead of the OS's. Ordering
