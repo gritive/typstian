@@ -53,13 +53,11 @@ describe("SourceNavigationScheduler", () => {
     scheduler.dispose();
   });
 
-  it("cancel resolves queued navigation and invalidates the running one", async () => {
+  it("cancel resolves queued navigation without running it", async () => {
     let finishRunning!: () => void;
     const running = new Promise<void>((resolve) => { finishRunning = resolve; });
-    const isCurrentResults: boolean[] = [];
-    const run = vi.fn(async (target: string, isCurrent: () => boolean) => {
+    const run = vi.fn(async (target: string) => {
       if (target === "running.typ") await running;
-      isCurrentResults.push(isCurrent());
     });
     const scheduler = new SourceNavigationScheduler(run);
 
@@ -68,11 +66,29 @@ describe("SourceNavigationScheduler", () => {
     scheduler.cancel();
 
     await expect(queued).resolves.toBeUndefined();
+    expect(run.mock.calls.map(([target]) => target)).toEqual(["running.typ"]);
+
+    finishRunning();
+    await first;
+    scheduler.dispose();
+  });
+
+  it("cancel invalidates the running navigation", async () => {
+    let finishRunning!: () => void;
+    const running = new Promise<void>((resolve) => { finishRunning = resolve; });
+    let isCurrentResult: boolean | undefined;
+    const run = vi.fn(async (_target: string, isCurrent: () => boolean) => {
+      await running;
+      isCurrentResult = isCurrent();
+    });
+    const scheduler = new SourceNavigationScheduler(run);
+
+    const first = scheduler.schedule("running.typ", () => true);
+    scheduler.cancel();
     finishRunning();
     await first;
 
-    expect(run.mock.calls.map(([target]) => target)).toEqual(["running.typ"]);
-    expect(isCurrentResults).toEqual([false]);
+    expect(isCurrentResult).toBe(false);
     scheduler.dispose();
   });
 });
