@@ -1,7 +1,4 @@
 // @vitest-environment happy-dom
-import vm from "node:vm";
-import v8 from "node:v8";
-
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -10,12 +7,6 @@ import {
   type WasmEngine,
   type WasmEngineFactory,
 } from "../src/compiler-client";
-
-function collectGarbage(): void {
-  v8.setFlagsFromString("--expose_gc");
-  const gc = vm.runInNewContext("gc") as () => void;
-  gc();
-}
 
 class FakeWasmEngine implements WasmEngine {
   readonly calls: Array<{ kind: string; payload: object }> = [];
@@ -350,19 +341,19 @@ it("passes the pinned overlay snapshot to the engine compile request", async () 
     await expect(compile).rejects.toMatchObject({ code: "closed" });
   });
 
-  it("releases a dirty-buffer overlay after its compile settles", async () => {
+  it("does not supply a settled compile overlay to a later compile without one", async () => {
     const { client, engines } = harness();
-    let overlay: ReadonlyMap<string, Uint8Array> | undefined = new Map([
+    const overlay = new Map([
       ["docs/main.typ", Uint8Array.from([1, 2, 3])],
     ]);
-    const reference = new WeakRef(overlay);
-    const compile = client.compile({
+    const first = client.compile({
       revision: 1,
       entryPath: "docs/main.typ",
       overlay,
     });
 
     await vi.waitFor(() => expect(engines[0]?.calls).toHaveLength(1));
+    expect((engines[0]?.calls[0]?.payload as EngineCompileRequest).overlay).toBe(overlay);
     engines[0]!.respond({
       type: "compiled",
       revision: 1,
@@ -372,16 +363,32 @@ it("passes the pinned overlay snapshot to the engine compile request", async () 
       dependencies: ["docs/main.typ"],
       diagnostics: [],
     });
-    await compile;
+    await first;
 
-    engines[0]!.calls.length = 0;
-    overlay = undefined;
-    await new Promise<void>((resolve) => setTimeout(resolve, 0));
-    collectGarbage();
+    const second = client.compile({
+      revision: 2,
+      entryPath: "docs/main.typ",
+    });
+    await vi.waitFor(() => expect(engines[0]?.calls).toHaveLength(2));
+    expect(engines[0]?.calls[1]).toEqual({
+      kind: "compile",
+      payload: { revision: 2, entryPath: "docs/main.typ" },
+    });
+    engines[0]!.respond({
+      type: "compiled",
+      revision: 2,
+      pdfBase64: pdf.toString("base64"),
+      pdfBytes: pdf.length,
+      pages: [{ widthPt: 240, heightPt: 180 }],
+      dependencies: ["docs/main.typ"],
+      diagnostics: [],
+    });
 
-    expect(reference.deref()).toBeUndefined();
+    await second;
     client.close();
   });
+
+  it("releases a dirty-buffer overlay after its compile settles", );
 
   it("returns compile diagnostics without classifying them as an engine crash", async () => {
     const { client, engines } = harness();

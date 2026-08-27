@@ -11,6 +11,7 @@ const host = vi.hoisted(() => ({
 }));
 
 vi.mock("../src/wasm-vault-reader", () => ({
+  MAX_VAULT_INPUT_BYTES: 70 * 1024 * 1024,
   rootedReadFile: () => () => undefined,
   rootedReadFileAsync: () => host.readVault,
 }));
