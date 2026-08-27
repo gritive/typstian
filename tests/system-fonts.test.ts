@@ -188,6 +188,35 @@ describe("system font directories", () => {
     expect(directories).toContain("/opt/second-root");
   });
 
+  it("expands ~ and a relative name in FONTCONFIG_FILE", () => {
+    const tilde = withFontconfig({}, () =>
+      withVirtualFontconfig(
+        {
+          [path.join(os.homedir(), "my-fonts.conf")]:
+            "<fontconfig><dir>/opt/tilde-configured</dir></fontconfig>",
+        },
+        () => {
+          vi.stubEnv("FONTCONFIG_FILE", "~/my-fonts.conf");
+          return withPlatform("linux", () => systemFontDirectories());
+        },
+      ),
+    );
+    const relative = withFontconfig({}, (root) => {
+      const configurationRoot = path.join(root, "etc-fonts");
+      fs.mkdirSync(configurationRoot, { recursive: true });
+      fs.writeFileSync(
+        path.join(configurationRoot, "named.conf"),
+        "<fontconfig><dir>/opt/relatively-configured</dir></fontconfig>",
+      );
+      vi.stubEnv("FONTCONFIG_PATH", configurationRoot);
+      vi.stubEnv("FONTCONFIG_FILE", "named.conf");
+      return withPlatform("linux", () => systemFontDirectories());
+    });
+
+    expect(tilde).toContain("/opt/tilde-configured");
+    expect(relative).toContain("/opt/relatively-configured");
+  });
+
   it("falls back to /etc/fonts when no fontconfig path is set", () => {
     const directories = withFontconfig({ FONTCONFIG_PATH: undefined }, () =>
       withVirtualFontconfig(

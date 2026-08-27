@@ -319,6 +319,19 @@ function readFontconfigFile(
   }
 }
 
+// $FONTCONFIG_FILE names one configuration, the way `FcConfigGetFilename`
+// reads it: `~` is this user's home, and a bare name is looked for in each
+// configuration root, so the caller tries them in order.
+function expandConfigurationFile(
+  value: string,
+  home: string,
+  configurationRoots: readonly string[],
+): string[] {
+  if (value === "~" || value.startsWith("~/")) return [path.join(home, value.slice(1))];
+  if (path.isAbsolute(value)) return [value];
+  return configurationRoots.map((directory) => path.join(directory, value));
+}
+
 export function systemFontDirectories(): string[] {
   const home = os.homedir();
   if (process.platform === "darwin") {
@@ -347,14 +360,18 @@ export function systemFontDirectories(): string[] {
   const fontconfigFile = process.env.FONTCONFIG_FILE;
   const configHome = process.env.XDG_CONFIG_HOME ?? path.join(home, ".config");
   const prefixes = { home, dataHome, configHome };
+  // FONTCONFIG_PATH is a search path, not a directory: fontconfig reads every
+  // root on it, the way XDG_DATA_DIRS is read above.
+  const configurationRoots = (process.env.FONTCONFIG_PATH ?? "/etc/fonts")
+    .split(path.delimiter)
+    .filter(Boolean);
   const systemFontconfig = fontconfigFile
-    ? readFontconfigFile(fontconfigFile, prefixes)
-    : // FONTCONFIG_PATH is a search path, not a directory: fontconfig reads
-      // every root on it, the way XDG_DATA_DIRS is read above.
-      (process.env.FONTCONFIG_PATH ?? "/etc/fonts")
-        .split(path.delimiter)
-        .filter(Boolean)
-        .flatMap((directory) => readFontconfigRoot(directory, prefixes));
+    ? // The env value is a configuration path like any other, so it expands
+      // like one: `~` for this user, a relative name against a config root.
+      expandConfigurationFile(fontconfigFile, home, configurationRoots).flatMap((file) =>
+        readFontconfigFile(file, prefixes),
+      )
+    : configurationRoots.flatMap((directory) => readFontconfigRoot(directory, prefixes));
   const userFontconfig = [
     ...readFontconfigRoot(path.join(configHome, "fontconfig"), prefixes),
     // fontconfig still honours this pre-XDG location, so a user whose <dir>
