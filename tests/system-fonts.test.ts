@@ -299,6 +299,22 @@ describe("system font directories", () => {
     expect(directories).toContain("/opt/twice");
   });
 
+  it("follows an include to another configuration file", () => {
+    const directories = withFontconfig({}, (root) => {
+      const included = path.join(root, "my-fonts.conf");
+      fs.writeFileSync(included, "<fontconfig><dir>/opt/included-fonts</dir></fontconfig>");
+      const configuration = path.join(root, "fonts.conf");
+      fs.writeFileSync(
+        configuration,
+        `<fontconfig><include>${included}</include></fontconfig>`,
+      );
+      vi.stubEnv("FONTCONFIG_FILE", configuration);
+      return withPlatform("linux", () => systemFontDirectories());
+    });
+
+    expect(directories).toContain("/opt/included-fonts");
+  });
+
   it("ignores a fontconfig file past the byte bound", () => {
     const directories = withFontconfig({}, (root) => {
       const configuration = path.join(root, "huge.conf");

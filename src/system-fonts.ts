@@ -188,65 +188,108 @@ export async function registerSystemFonts(
 // real fonts.conf is a few kilobytes and a conf.d holds a few dozen fragments.
 export const MAX_FONTCONFIG_FILE_BYTES = 1024 * 1024;
 export const MAX_FONTCONFIG_FRAGMENTS = 256;
+// fontconfig configurations include each other, sometimes in a cycle. The
+// visited set alone would terminate, but the depth keeps a legal deep chain
+// from costing the init thread an unbounded number of synchronous reads.
+export const MAX_FONTCONFIG_INCLUDE_DEPTH = 8;
 
 const FONTCONFIG_DIR_ELEMENT = /<dir\b([^>]*)>([^<]*)<\/dir>/g;
+const FONTCONFIG_INCLUDE_ELEMENT = /<include\b([^>]*)>([^<]*)<\/include>/g;
 const FONTCONFIG_COMMENT = /<!--[\s\S]*?-->/g;
+
+function isDirectory(target: string): boolean {
+  try {
+    return fs.statSync(target).isDirectory();
+  } catch {
+    return false;
+  }
+}
 
 interface FontconfigRoots {
   readonly home: string;
   readonly dataHome: string;
 }
 
-function parseFontconfigDirectories(xml: string, roots: FontconfigRoots): string[] {
-  const directories: string[] = [];
-  for (const match of xml.replace(FONTCONFIG_COMMENT, "").matchAll(FONTCONFIG_DIR_ELEMENT)) {
-    const directory = (match[2] ?? "").trim();
-    if (!directory) continue;
-    // Only this process's own home. "~otheruser/fonts" names another account,
-    // which nothing here can resolve, so it falls through and is dropped as
-    // non-absolute rather than being rewritten under $HOME.
-    if (directory === "~" || directory.startsWith("~/")) {
-      directories.push(path.join(roots.home, directory.slice(1)));
-      continue;
-    }
-    // `prefix="xdg"` makes a relative path mean "under the XDG base directory",
-    // which for a font directory is $XDG_DATA_HOME. An absolute path ignores it.
-    if (/\bprefix\s*=\s*["']xdg["']/.test(match[1] ?? "") && !path.isAbsolute(directory)) {
-      directories.push(path.join(roots.dataHome, directory));
-      continue;
-    }
-    if (path.isAbsolute(directory)) directories.push(directory);
+// `<dir>` and `<include>` name paths the same way, so they expand the same way.
+// A path that resolves to nothing absolute is dropped, not guessed at.
+function expandFontconfigPath(
+  value: string,
+  attributes: string,
+  roots: FontconfigRoots,
+): string | undefined {
+  // Only this process's own home. "~otheruser/fonts" names another account,
+  // which nothing here can resolve, so it is dropped rather than rewritten
+  // under $HOME.
+  if (value === "~" || value.startsWith("~/")) return path.join(roots.home, value.slice(1));
+  // `prefix="xdg"` makes a relative path mean "under the XDG base directory",
+  // which for fonts is $XDG_DATA_HOME. An absolute path ignores it.
+  if (/\bprefix\s*=\s*["']xdg["']/.test(attributes) && !path.isAbsolute(value)) {
+    return path.join(roots.dataHome, value);
   }
-  return directories;
+  return path.isAbsolute(value) ? value : undefined;
+}
+
+function parseFontconfigElements(
+  xml: string,
+  element: RegExp,
+  roots: FontconfigRoots,
+): string[] {
+  const paths: string[] = [];
+  for (const match of xml.replace(FONTCONFIG_COMMENT, "").matchAll(element)) {
+    const value = (match[2] ?? "").trim();
+    if (!value) continue;
+    const expanded = expandFontconfigPath(value, match[1] ?? "", roots);
+    if (expanded) paths.push(expanded);
+  }
+  return paths;
 }
 
 // One configuration root contributes its own fonts.conf plus every fragment in
 // its conf.d, which is where a distribution and a user alike drop declarations.
 function readFontconfigRoot(directory: string, roots: FontconfigRoots): string[] {
-  const confD = path.join(directory, "conf.d");
-  let fragments: string[] = [];
+  return [
+    path.join(directory, "fonts.conf"),
+    ...dotConfFiles(path.join(directory, "conf.d")),
+  ].flatMap((file) => readFontconfigFile(file, roots));
+}
+
+// The `.conf` files a directory contributes: a root's conf.d, and what an
+// `<include>` naming a directory resolves to.
+function dotConfFiles(directory: string): string[] {
   try {
-    fragments = fs
-      .readdirSync(confD)
+    return fs
+      .readdirSync(directory)
       .filter((entry) => entry.endsWith(".conf"))
       .sort()
       // Sorted first, so the bound cuts the tail rather than an arbitrary set:
       // fontconfig's own numeric prefixes put the important fragments early.
       .slice(0, MAX_FONTCONFIG_FRAGMENTS)
-      .map((entry) => path.join(confD, entry));
+      .map((entry) => path.join(directory, entry));
   } catch {
-    fragments = [];
+    return [];
   }
-  return [path.join(directory, "fonts.conf"), ...fragments].flatMap((file) =>
-    readFontconfigFile(file, roots),
-  );
 }
 
-function readFontconfigFile(file: string, roots: FontconfigRoots): string[] {
+function readFontconfigFile(
+  file: string,
+  roots: FontconfigRoots,
+  visited: Set<string> = new Set(),
+  depth = 0,
+): string[] {
+  if (depth > MAX_FONTCONFIG_INCLUDE_DEPTH || visited.has(file)) return [];
+  visited.add(file);
   try {
     // Size first, so an oversized file is never pulled into memory at all.
     if (fs.statSync(file).size > MAX_FONTCONFIG_FILE_BYTES) return [];
-    return parseFontconfigDirectories(fs.readFileSync(file, "utf8"), roots);
+    const xml = fs.readFileSync(file, "utf8");
+    const included = parseFontconfigElements(xml, FONTCONFIG_INCLUDE_ELEMENT, roots).flatMap(
+      (target) =>
+        // An include naming a directory means every `.conf` inside it.
+        (isDirectory(target) ? dotConfFiles(target) : [target]).flatMap((next) =>
+          readFontconfigFile(next, roots, visited, depth + 1),
+        ),
+    );
+    return [...parseFontconfigElements(xml, FONTCONFIG_DIR_ELEMENT, roots), ...included];
   } catch {
     // A missing, unreadable, or malformed configuration is not an error worth
     // failing discovery over: the standard paths still stand on their own.
