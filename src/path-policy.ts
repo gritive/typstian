@@ -1,7 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
 
-function escapesRoot(root: string, candidate: string): boolean {
+/**
+ * Whether a candidate leaves a root. `..hidden` is a legitimate name, so the
+ * test is on path segments rather than on the string starting with two dots.
+ */
+export function escapesRoot(root: string, candidate: string): boolean {
   const relative = path.relative(root, candidate);
   return (
     path.isAbsolute(relative)
@@ -84,6 +88,19 @@ function canonicalOrSelf(directory: string): string {
  * the user is still looking at the field, instead of leaving it to a notice on
  * some later action.
  */
+/**
+ * What to tell the user about a root that will not resolve. The settings row
+ * and the commands that refuse to run both say this, so the two cannot drift
+ * into telling the same user different stories about one value.
+ */
+export const COMPILATION_ROOT_PROBLEM: Record<CompilationRootProblem, string> = {
+  "missing": "No folder at this path yet. Create it, or type a path that exists.",
+  "not-a-folder": "This path is a file, not a folder. Type the path of a folder instead.",
+  "broken-link": "This link points at nothing. Fix the link, or type another path.",
+  "unreadable": "This path cannot be read. Check its permissions, or type another path.",
+  "outside-vault": "This path leaves the vault. Type a path inside the vault instead."
+};
+
 export function checkCompilationRoot(vaultRoot: string, rootPath: string): CompilationRootCheck {
   // The escape is decided lexically first, so `../notes` is named for leaving
   // the vault rather than for not existing yet — creating it would not help.

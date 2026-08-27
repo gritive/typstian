@@ -446,13 +446,13 @@ function parseForward(value: unknown, revision: number): CompilerForwardResult {
     requireInteger(response.expectedRevision, "expected revision");
     throw new CompilerClientError("stale", "Preview revision is no longer active.");
   }
-  if (response.revision !== revision) throw malformed("Compiler returned the wrong forward revision.");
+  if (response.revision !== revision) throw malformed("Compiler returned the wrong revision for a preview position.");
   if (response.type === "no-position") return { revision, positions: [] };
   if (response.type !== "positions" || !Array.isArray(response.positions)) {
-    throw malformed("Compiler returned the wrong forward response.");
+    throw malformed("Compiler returned the wrong reply for a preview position.");
   }
   if (response.positions.length > MAX_PAGES) {
-    throw malformed("Compiler returned too many forward positions.");
+    throw malformed("Compiler returned too many preview positions.");
   }
   return {
     revision,

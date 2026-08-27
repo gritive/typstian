@@ -43,7 +43,7 @@ install it, and enable it. Do not enable another plugin that registers the
 5. Click rendered preview text to jump to the exact Typst source byte offset.
    Dragging still selects text for copying; links and controls keep their normal behavior.
 6. In a saved `.typ` editor, click or move the selection with the mouse to reveal
-   the corresponding output location in the preview. Keyboard-only selection
+   the matching spot in the preview. Keyboard-only selection
    changes do not sync automatically. Unsaved buffers must be saved first.
 
 The preview follows the active Typst editor, except that opening a source

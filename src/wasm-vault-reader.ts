@@ -9,7 +9,9 @@ import {
   statSync,
   type Stats,
 } from "node:fs";
-import { isAbsolute, relative, resolve } from "node:path";
+import { resolve } from "node:path";
+
+import { escapesRoot } from "./path-policy";
 
 export const MAX_VAULT_INPUT_FILE_BYTES = 50 * 1024 * 1024;
 
@@ -28,8 +30,7 @@ function isSafeRelativePath(path: string): boolean {
 }
 
 function isWithin(root: string, candidate: string): boolean {
-  const path = relative(root, candidate);
-  return path === "" || (!path.startsWith("..") && !isAbsolute(path));
+  return !escapesRoot(root, candidate);
 }
 
 function candidatePath(root: string, path: string): string | undefined {

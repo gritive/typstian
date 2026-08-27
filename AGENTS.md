@@ -39,8 +39,12 @@ and embeds the result in `main.js`; Community releases contain only `main.js`,
   cancellation, and response validation; `wasm-engine.ts` initializes the
   bundled WASM module and owns per-preview browser workers; `wasm-worker.ts`
   owns compiler sessions and the asynchronous vault/font input protocol.
-  `font-residency.ts` and `compile-deadline.ts` hold the two policies those
-  three share — which font bytes a worker keeps, and how long a request may
+  `path-policy.ts` decides what counts as inside the vault and inside the
+  compilation root — one `escapesRoot` that the vault reader, the package
+  reader, and the settings row all answer to, plus the failure taxonomy the
+  settings row turns into sentences (missing, a file, a link to nothing,
+  unreadable, outside the vault). `font-residency.ts` and
+  `compile-deadline.ts` hold the two policies those three share — which font bytes a worker keeps, and how long a request may
   take — as pure functions, so both are testable without Obsidian.
 - `helper/wasm/src/protocol.rs` holds the serde-only wire types the plugin and
   the compiler agree on. It was a separate `typstian-core` crate while a native

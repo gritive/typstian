@@ -6,7 +6,7 @@ import {
   type SettingDefinitionItem
 } from "obsidian";
 
-import { checkCompilationRoot } from "./path-policy";
+import { COMPILATION_ROOT_PROBLEM, checkCompilationRoot } from "./path-policy";
 import type { TypstianSettings } from "./settings-model";
 
 export interface SettingsHost {
@@ -24,14 +24,7 @@ const ROOT_PATH_DESC = "Optional path relative to the vault. Empty uses the vaul
 // preview rejects an entry the root cannot contain. Each sentence has to be true
 // of exactly its own state and name the action that fixes that state, since the
 // fixes differ: create the folder, retype the path, or repair permissions.
-const ROOT_STATUS = {
-  "ok": "Ready: this folder is inside the vault.",
-  "missing": "No folder at this path yet. Create it, or type a path that exists.",
-  "not-a-folder": "This path is a file, not a folder. Type the path of a folder instead.",
-  "broken-link": "This link points at nothing. Fix the link, or type another path.",
-  "unreadable": "This path cannot be read. Check its permissions, or type another path.",
-  "outside-vault": "This path leaves the vault. Type a path inside the vault instead."
-} as const;
+const ROOT_READY = "Ready: this folder is inside the vault.";
 
 export class TypstianSettingsTab extends PluginSettingTab {
   private saveTimer: number | null = null;
@@ -92,7 +85,7 @@ export class TypstianSettingsTab extends PluginSettingTab {
     }
     const check = checkCompilationRoot(vaultRoot, rootPath);
     if (!check.ok) status.className += " is-invalid";
-    status.textContent = ROOT_STATUS[check.ok ? "ok" : check.reason];
+    status.textContent = check.ok ? ROOT_READY : COMPILATION_ROOT_PROBLEM[check.reason];
   }
 
   private vaultRoot(): string | null {

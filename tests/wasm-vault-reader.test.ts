@@ -12,6 +12,24 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+describe("vault containment", () => {
+  it("reads a folder whose name merely starts with two dots", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "typstian-dots-"));
+    try {
+      const canonicalRoot = fs.realpathSync(root);
+      fs.mkdirSync(path.join(canonicalRoot, "..hidden"));
+      fs.writeFileSync(path.join(canonicalRoot, "..hidden", "main.typ"), "= Hi\n");
+
+      // `..hidden` is a legitimate name, not a way out of the vault.
+      expect(rootedReadFile(canonicalRoot)("..hidden/main.typ")).toEqual(
+        new TextEncoder().encode("= Hi\n"),
+      );
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("async rooted WASM reader", () => {
   it("rejects a parent replaced by an external symlink after canonicalization", async () => {
     const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "typstian-vault-race-"));

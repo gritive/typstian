@@ -98,7 +98,8 @@ describe("TypstianPlugin settings updates", () => {
     const plugin = new TypstianPlugin({} as never, {} as never);
     const restartBackend = vi.fn();
     const internals = plugin as unknown as {
-      settings: { rootPath: string };
+      savePdf(sourcePath: string): Promise<void>;
+    settings: { rootPath: string };
       previewViews(): Array<{ restartBackend(): void }>;
     };
     internals.settings = { rootPath: "projects/book" };
@@ -289,6 +290,7 @@ function harness(leaves: DeferredLeaf[]) {
       refresh(): void;
     }>;
     publishDiagnostics(result: unknown): void;
+    savePdf(sourcePath: string): Promise<void>;
     settings: { rootPath: string };
     vaultRoot(): string;
     compilationRoot(vaultRoot: string): string;
@@ -506,7 +508,7 @@ describe("TypstianPlugin Typst file creation", () => {
 
       commands.get("create-typst-file")?.callback?.();
 
-      expect(notices).toContain("The configured compilation root is outside this vault.");
+      expect(notices).toContain("This path leaves the vault. Type a path inside the vault instead.");
       expect(vault.create).not.toHaveBeenCalled();
       plugin.onunload();
     } finally {
@@ -543,6 +545,56 @@ describe("TypstianPlugin Typst file creation", () => {
 
     expect(items).not.toContain("New Typst file");
     plugin.onunload();
+  });
+
+  it("names the real problem when the compilation root does not exist", async () => {
+    const target = deferredLeaf();
+    target.finish();
+    const { commands, internals, plugin, vault } = harness([target.leaf]);
+    const vaultRoot = fs.mkdtempSync(path.join(os.tmpdir(), "typstian-vault-"));
+    try {
+      vault.getAbstractFileByPath.mockReturnValue(null);
+      vi.spyOn(internals, "vaultRoot").mockReturnValue(fs.realpathSync(vaultRoot));
+      (internals.compilationRoot as unknown as { mockRestore(): void }).mockRestore();
+      const notices = (Notice as unknown as { messages: string[] }).messages;
+      notices.length = 0;
+      await plugin.onload();
+      // The settings row invites exactly this state: a folder the user is
+      // about to create. Calling it "outside this vault" contradicts it.
+      internals.settings.rootPath = "not-created-yet";
+
+      commands.get("create-typst-file")?.callback?.();
+
+      expect(notices).toContain("No folder at this path yet. Create it, or type a path that exists.");
+      expect(vault.create).not.toHaveBeenCalled();
+      plugin.onunload();
+    } finally {
+      fs.rmSync(vaultRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("says why a save cannot start instead of failing silently", async () => {
+    const target = deferredLeaf();
+    target.finish();
+    const { internals, plugin } = harness([target.leaf]);
+    const vaultRoot = fs.mkdtempSync(path.join(os.tmpdir(), "typstian-vault-"));
+    try {
+      vi.spyOn(internals, "vaultRoot").mockReturnValue(fs.realpathSync(vaultRoot));
+      (internals.compilationRoot as unknown as { mockRestore(): void }).mockRestore();
+      const notices = (Notice as unknown as { messages: string[] }).messages;
+      notices.length = 0;
+      await plugin.onload();
+      internals.settings.rootPath = "../outside-the-vault";
+
+      // The toolbar button absorbs the rejection, so a throw here reaches
+      // nobody: the user watches "Saving…" turn back into "Save" and no more.
+      await internals.savePdf("book/main.typ");
+
+      expect(notices).toContain("This path leaves the vault. Type a path inside the vault instead.");
+      plugin.onunload();
+    } finally {
+      fs.rmSync(vaultRoot, { recursive: true, force: true });
+    }
   });
 
   it("never overwrites a taken name", async () => {

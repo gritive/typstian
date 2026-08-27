@@ -40,9 +40,16 @@ import {
 import {
   resolveCompilationRoot,
   resolveDiagnosticVaultPath,
-  resolveCompilerEntryPath
+  resolveCompilerEntryPath,
+  COMPILATION_ROOT_PROBLEM,
+  checkCompilationRoot,
+  type CompilationRootCheck
 } from "./path-policy";
 import { isWithinVaultFolder, resolveNewTypstFile } from "./new-typst-file";
+
+type CompilationRootFolder =
+  | { readonly ok: true; readonly folder: string }
+  | Extract<CompilationRootCheck, { ok: false }>;
 import { resolvePdfExportPath } from "./pdf-export";
 import {
   chooseForwardPreview,
@@ -109,12 +116,12 @@ export default class TypstianPlugin extends Plugin {
       id: "create-typst-file",
       name: "Create a Typst file",
       callback: () => {
-        const folder = this.compilationRootFolder();
-        if (folder === null) {
-          new Notice("The configured compilation root is outside this vault.");
+        const root = this.compilationRootFolder();
+        if (!root.ok) {
+          new Notice(COMPILATION_ROOT_PROBLEM[root.reason]);
           return;
         }
-        void this.createTypstFile(folder);
+        void this.createTypstFile(root.folder);
       }
     });
     this.addCommand({
@@ -162,7 +169,7 @@ export default class TypstianPlugin extends Plugin {
       // Offering it outside the compilation root would hand the user a file
       // nothing can compile — the failure this command exists to undo.
       const root = this.compilationRootFolder();
-      if (root === null || !isWithinVaultFolder(root, file.path)) return;
+      if (!root.ok || !isWithinVaultFolder(root.folder, file.path)) return;
       menu.addItem((item) => item
         .setTitle("New Typst file")
         .setIcon("file-plus")
@@ -771,6 +778,14 @@ private handleVaultPath(vaultPath: string, includeDirectEntry = true): void {
   }
 
   private async savePdf(sourcePath: string): Promise<void> {
+    // The toolbar button absorbs whatever this returns, so a throw from here
+    // would reach nobody: the user would watch the button settle and learn
+    // nothing. Every refusal has to be a notice.
+    const rootFolder = this.compilationRootFolder();
+    if (!rootFolder.ok) {
+      new Notice(COMPILATION_ROOT_PROBLEM[rootFolder.reason]);
+      return;
+    }
     const vaultRoot = this.vaultRoot();
     const root = this.compilationRoot(vaultRoot);
     const entryPath = resolveCompilerEntryPath(vaultRoot, root, sourcePath);
@@ -842,14 +857,21 @@ private handleVaultPath(vaultPath: string, includeDirectEntry = true): void {
    * points outside the vault. The setting is free text, so it reaches the vault
    * API only through the same policy every compile already applies to it.
    */
-  private compilationRootFolder(): string | null {
+  /**
+   * The compilation root as a vault-relative folder, or why it is unusable —
+   * the same reason the settings row shows, so a command cannot tell the user
+   * a different story about the value than the setting that produced it.
+   */
+  private compilationRootFolder(): CompilationRootFolder {
     const vaultRoot = this.vaultRoot();
     try {
-      return path.relative(vaultRoot, this.compilationRoot(vaultRoot)).split(path.sep).join("/");
+      const root = this.compilationRoot(vaultRoot);
+      return { ok: true, folder: path.relative(vaultRoot, root).split(path.sep).join("/") };
     } catch {
-      // Only the root policy is swallowed here; a vault that is not on a local
-      // filesystem is a different failure, and every other command lets it out.
-      return null;
+      // Only the root policy is classified here; a vault that is not on a local
+      // filesystem throws out of `vaultRoot` above, as it does everywhere else.
+      const check = checkCompilationRoot(vaultRoot, this.settings.rootPath);
+      return check.ok ? { ok: false, reason: "unreadable" } : check;
     }
   }
 }
