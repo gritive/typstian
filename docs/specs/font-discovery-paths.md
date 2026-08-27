@@ -47,6 +47,11 @@ and the environment.
 - **AC6** The returned list contains no duplicates and every entry is absolute.
 - **AC7** macOS and Windows lists are unchanged. fontconfig is not consulted on
   either platform.
+- **AC8** Reading the fontconfig configuration is bounded like every other host
+  read in the plugin: a file past `MAX_FONTCONFIG_FILE_BYTES` contributes no
+  directories, and at most `MAX_FONTCONFIG_FRAGMENTS` `conf.d` fragments are read
+  per root. Discovery runs synchronously on the thread that initializes the
+  engine, so an unbounded read is a hang, not just a waste.
 
 ## Out of scope
 
