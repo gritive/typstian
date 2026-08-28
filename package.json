@@ -20,7 +20,7 @@
   "dependencies": {
     "codemirror-lang-typst": "0.6.0",
     "pdfjs-dist": "4.8.69",
-    "saxes": "6.0.0"
+    "sax": "1.6.1"
   },
   "devDependencies": {
     "@codemirror/autocomplete": "6.20.3",
@@ -31,6 +31,7 @@
     "@codemirror/state": "6.5.0",
     "@codemirror/view": "6.38.6",
     "@types/node": "^22.15.17",
+    "@types/sax": "1.2.7",
     "esbuild": "0.28.2",
     "eslint": "^9.39.4",
     "eslint-plugin-obsidianmd": "^0.4.2",

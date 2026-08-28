@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { SaxesParser } from "saxes";
+import sax from "sax";
 
 // The font directories fontconfig's own configuration declares, which is what
 // makes Typstian agree with every other application on the machine about where
@@ -179,7 +179,11 @@ function readFontconfigFile(file: string, scan: FontconfigScan, depth = 0): stri
     // Size first, so an oversized file is never pulled into memory at all.
     if (fs.statSync(file).size > MAX_FONTCONFIG_FILE_BYTES) return [];
     const xml = fs.readFileSync(file, "utf8");
-    new SaxesParser().write(xml).close();
+    const parser = sax.parser(true);
+    parser.onerror = (error) => {
+      throw error;
+    };
+    parser.write(xml).close();
     const included = parseFontconfigElements(xml, "include", prefixes, file).flatMap(
       (target) =>
         // An include naming a directory means every `.conf` inside it.

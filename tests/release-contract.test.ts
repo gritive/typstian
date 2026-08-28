@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
+
 describe("release contract", () => {
   it("declares Typstian as a desktop-only Obsidian plugin with synchronized versions", () => {
     const root = path.resolve(import.meta.dirname, "..");
@@ -263,5 +264,30 @@ describe("release contract", () => {
       expect(notices).toContain(requiredNotice);
     }
     expect(readme).toContain("licensed under the MIT License");
+  });
+
+  it("keeps bundled npm dependency notices current", () => {
+    const root = path.resolve(import.meta.dirname, "..");
+    const packageJson = JSON.parse(
+      fs.readFileSync(path.join(root, "package.json"), "utf8"),
+    ) as { dependencies?: Record<string, string> };
+    const packageLock = fs.readFileSync(path.join(root, "package-lock.json"));
+    const notices = fs.readFileSync(
+      path.join(root, "THIRD_PARTY_NOTICES.md"),
+      "utf8",
+    );
+
+    expect(notices).toContain(
+      `package-lock.json SHA-256: ${createHash("sha256").update(packageLock).digest("hex")}`,
+    );
+    for (const dependencyName of Object.keys(packageJson.dependencies ?? {})) {
+      const dependency = JSON.parse(
+        fs.readFileSync(
+          path.join(root, "node_modules", ...dependencyName.split("/"), "package.json"),
+          "utf8",
+        ),
+      ) as { name: string; version: string };
+      expect(notices).toContain(`### ${dependency.name} ${dependency.version}`);
+    }
   });
 });
